@@ -8,6 +8,7 @@
 rm(list=ls())
 set.seed(1)
 
+# create a function to simulate data
 generate_Simulated_Data <- function(n, dist.errors, data.generating.mechanism)
 {
   # generate the x's
@@ -40,7 +41,9 @@ generate_Simulated_Data <- function(n, dist.errors, data.generating.mechanism)
   return(sim.data)
 }
 
-# define some parameters to simulate data
+######################################################
+### define some parameters to simulate data###########
+######################################################
 
 # sample size
 n <- c(10, 25, 75, 250, 1000)
@@ -65,6 +68,10 @@ data.generating.mechanism <- c('x',
                                'log(x)',
                                'e^x')
 data.generating.mechanism <- c('x', 'x^2', 'x^3')
+
+######################################################
+### end defining some parameters to simulate data#####
+######################################################
 
 # simulate the data
 sim.data <- NULL
