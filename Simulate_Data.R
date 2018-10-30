@@ -16,6 +16,8 @@ generate_Simulated_Data <- function(n, dist.errors, data.generating.mechanism)
   # generate the errors
   if (dist.errors == 'Normal(0,1)'){
     err <- rnorm(n, 0, 1)
+  } else if (dist.errors == 'Normal(0,2)'){
+    err <- rnorm(n, 0, 2)
   } else stop('Unknown Error Distribution!')
   
   # generate the y's
@@ -27,9 +29,14 @@ generate_Simulated_Data <- function(n, dist.errors, data.generating.mechanism)
     y <- x^3 + err  
   } else stop('Unknown Data Generating Mechanism!')
   
+  sim.data.lab <- paste('n=', toString(n), '; ',
+                        'dist error: ', dist.errors, '; ',
+                        'data gen. mech.: ', data.generating.mechanism,
+                        sep='')
   sim.data <- data.frame(x=x, y=y, n = rep(n, length(x)),
                          dist_errors = rep('Normal(0,1)', length(x)),
-                         data_gen_mech = rep(data.generating.mechanism, length(x)))
+                         data_gen_mech = rep(data.generating.mechanism, length(x)),
+                         sim_type = rep(sim.data.lab, length(x)))
   return(sim.data)
 }
 
@@ -40,6 +47,7 @@ n <- c(10, 25, 75, 250, 1000)
 
 # distribution of the errors
 dist.errors <- c('Normal(0,1)', 
+                 'Normal(0,2)',
                  'Log normal',
                  'Gamma',
                  'Chi-squared',
@@ -75,4 +83,5 @@ for (sample_size in n){
   
 } # end for (sample_size in n){
 
-save.image('simulated_data.RData')
+write.csv(sim.data, './simulated_data.csv')
+save.image('./simulated_data.RData')
