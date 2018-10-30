@@ -6,20 +6,22 @@
 # Last Modified by SM 10/29/2018
 
 rm(list=ls())
+library(truncnorm)
 set.seed(1)
 
 # create a function to simulate data
 generate_Simulated_Data <- function(n, dist.errors, data.generating.mechanism)
 {
   # generate the x's
-  x <-rnorm(n, 0, 2)
+  x <-rtruncnorm(n, a=0, b=Inf, mean=5, sd=2)
   
   # generate the errors
   if (dist.errors == 'Normal(0,1)'){
     err <- rnorm(n, 0, 1)
   } else if (dist.errors == 'Normal(0,2)'){
     err <- rnorm(n, 0, 2)
-  } else stop('Unknown Error Distribution!')
+  } else stop(paste('Unknown Error Distribution: ',
+                    dist.errors, sep =''))
   
   # generate the y's
   if (data.generating.mechanism == 'x'){
@@ -28,14 +30,21 @@ generate_Simulated_Data <- function(n, dist.errors, data.generating.mechanism)
     y <- x^2 + err  
   } else if (data.generating.mechanism == 'x^3'){
     y <- x^3 + err  
-  } else stop('Unknown Data Generating Mechanism!')
+  } else if (data.generating.mechanism == 'sqrt(x)'){
+    y <- sqrt(x) + err 
+  } else if (data.generating.mechanism == 'log(x)'){
+    y <- log(x) + err 
+  } else if (data.generating.mechanism == 'exp(x)'){
+    y <- exp(x) + err 
+  } else stop(paste('Unknown Data Generating Mechanism: ',
+                    data.generating.mechanism, sep = ''))
   
   sim.data.lab <- paste('n=', toString(n), '; ',
                         'dist error: ', dist.errors, '; ',
                         'data gen. mech.: ', data.generating.mechanism,
                         sep='')
   sim.data <- data.frame(x=x, y=y, n = rep(n, length(x)),
-                         dist_errors = rep('Normal(0,1)', length(x)),
+                         dist_errors = rep(dist.errors, length(x)),
                          data_gen_mech = rep(data.generating.mechanism, length(x)),
                          sim_type = rep(sim.data.lab, length(x)))
   return(sim.data)
@@ -58,7 +67,8 @@ dist.errors <- c('Normal(0,1)',
                  'Weibull',
                  'Exponential')
 # this is a shorter version for testing
-dist.errors <- c('Normal(0,1)')
+dist.errors <- c('Normal(0,1)',
+                 'Normal(0,2)')
 
 # how to generate the y
 data.generating.mechanism <- c('x',
@@ -66,9 +76,7 @@ data.generating.mechanism <- c('x',
                                'x^3',
                                'sqrt(x)',
                                'log(x)',
-                               'e^x')
-data.generating.mechanism <- c('x', 'x^2', 'x^3')
-
+                               'exp(x)')
 ######################################################
 ### end defining some parameters to simulate data#####
 ######################################################

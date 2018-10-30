@@ -29,7 +29,7 @@ data.generating.mechanism <- c('x',
                                'x^3',
                                'sqrt(x)',
                                'log(x)',
-                               'e^x')
+                               'exp(x)')
 
 ######################################################
 ### end defining some parameters to simulate data#####
