@@ -17,6 +17,7 @@ Suppose we have normal random variable $X$. and another random variable $e$ (rep
 ```{r}
 x <- rnorm(100,15,5)
 e <- rnorm(100)
+e_LN <- rlnorm(100)
 ```
 
 We can find the current correlation matrix for these variables:
@@ -24,6 +25,7 @@ We can find the current correlation matrix for these variables:
 ```{r}
 cmat <- var(cbind(x,e))
 cmat
+
 ```
 
 Then we can use the _Cholesky Decomposition_ to get independence, in essence, 'remove' this existing correlation.
@@ -75,6 +77,7 @@ create_corr_errors <- function(var1,var2,r){
 }
 test <- create_corr_errors(x,e,0.6)
 cor(test)
+
 ```
 
 ## Does this change when X is truncated normal?
@@ -82,3 +85,12 @@ cor(test)
 ## Does this change for linear combinations of X? (e.g., adding an error term)
 
 ## Does this change for non-linear combinations of X?
+
+## Does this change for non-normal distributions of errors?
+```{r}
+ln_test <- create_corr_errors(x,e_LN,0.6)
+cor(ln_test)
+plot(x,e_LN)
+plot(x,ln_test[,2])
+```
+
