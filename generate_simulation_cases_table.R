@@ -11,7 +11,7 @@ library(stringr)
 ######################################################
 
 # sample size
-n <- c(10, 25, 75, 250, 1000)
+n <- c(20, 100, 1000)
 
 # distribution of the errors
 dist.errors <- c('Normal(0,1)', 
@@ -23,10 +23,14 @@ dist.errors <- c('Normal(0,1)',
                  'Weibull',
                  'Exponential')
 
+Homoscedasticity <- c('Independent',
+                      '0.8 Corr w/ X',
+                      '0.2 Corr w/ X')
+
 # how to generate the y
 data.generating.mechanism <- c('x',
-                               'x^2',
-                               'x^3',
+                               'x + x^2',
+                               'x + x^2 + x^3',
                                'sqrt(x)',
                                'log(x)',
                                'exp(x)')
@@ -41,19 +45,24 @@ for (sample_size in n){
   
   for (err in dist.errors){
     
-    for (dat.gen.mech in data.generating.mechanism){
+    for (corr in Homoscedasticity){
       
-      sim.cases.temp <- data.frame(n = sample_size,
-                                   dist_errors = err,
-                                   data_gen_mech = dat.gen.mech,
-                                   case = paste('Case ', str_pad(counter, 4, pad = "0"), sep=''))
-      if (counter > 1){
-        sim.cases <- rbind(sim.cases, sim.cases.temp)
-      } else sim.cases <- sim.cases.temp
+      for (dat.gen.mech in data.generating.mechanism){
+        
+        sim.cases.temp <- data.frame(n = sample_size,
+                                     dist_errors = err,
+                                     Homoscedasticity = corr,
+                                     data_gen_mech = dat.gen.mech,
+                                     case = paste('Case ', str_pad(counter, 4, pad = "0"), sep=''))
+        if (counter > 1){
+          sim.cases <- rbind(sim.cases, sim.cases.temp)
+        } else sim.cases <- sim.cases.temp
+        
+        counter = counter + 1
+        
+      } # for (dat.gen.mech in data.generating.mechanism){
       
-      counter = counter + 1
-      
-    } # for (dat.gen.mech in data.generating.mechanism){
+    } # for (corr in Homoscedasticity){
     
   } # end for (err in dist.errors){
   
