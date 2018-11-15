@@ -16,12 +16,14 @@ n <- c(20, 100, 1000)
 # distribution of the errors
 dist.errors <- c('Normal(0,1)', 
                  'Normal(0,2)',
-                 'Log normal',
-                 'Gamma',
-                 'Chi-squared',
-                 'Beta',
-                 'Weibull',
-                 'Exponential')
+                 'Cauchy(loc=0, scale=1)',
+                 'Student-t(df=2)',
+                 'Log normal(0,1)',
+                 'Gamma(5,1)',
+                 'Chi-squared(df=3)',
+                 'Beta(5,1)',
+                 'Weibull(1,1)',
+                 'Exponential(1)')
 
 Homoscedasticity <- c('Independent',
                       '0.8 Corr w/ X',

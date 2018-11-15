@@ -3,33 +3,64 @@
 # Purpose:
 #   R script to simulate training and test 
 #   data for our supervised machine learning algo
-# Last Modified by SM 10/29/2018
+# Last Modified by SM 11/14/2018
 
 rm(list=ls())
 library(truncnorm)
 set.seed(1)
 
 # create a function to simulate data
-generate_Simulated_Data <- function(n, dist.errors, data.generating.mechanism)
+generate_Simulated_Data <- function(n, dist.errors, corr_err,
+                                    data.generating.mechanism, rep_num)
 {
   # generate the x's
   x <-rtruncnorm(n, a=0, b=Inf, mean=5, sd=2)
   
   # generate the errors
-  if (dist.errors == 'Normal(0,1)'){
-    err <- rnorm(n, 0, 1)
-  } else if (dist.errors == 'Normal(0,2)'){
-    err <- rnorm(n, 0, 2)
-  } else stop(paste('Unknown Error Distribution: ',
-                    dist.errors, sep =''))
+  if (corr_err == 'Independent'){
+    
+    if (dist.errors == 'Normal(0,1)'){
+      err <- rnorm(n, 0, 1)
+    } else if (dist.errors == 'Normal(0,2)'){
+      err <- rnorm(n, 0, 2)
+    } else if (dist.errors == 'Log normal(0,1)'){
+      err <- rlnorm(n, 0, 1)
+    } else if (dist.errors == 'Cauchy(loc=0, scale=1)'){
+      err <- rcauchy(n, 0, 1)
+    } else if (dist.errors == 'Student-t(df=2)'){
+      err <- rt(n, 2)
+    } else if (dist.errors == 'Gamma(5,1)'){
+      err <- rgamma(n, 5, 1)
+    } else if (dist.errors == 'Chi-squared(df=3)'){
+      err <- rchisq(n, 3)
+    } else if (dist.errors == 'Beta(5,1)'){
+      err <- rbeta(n, 5, 1)
+    } else if (dist.errors == 'Weibull(1,1)'){
+      err <- rweibull(n, 1, 1)
+    } else if (dist.errors == 'Exponential(1)'){
+      err <- rexp(n, 1)
+    } else stop(paste('Unknown Error Distribution: ',
+                      dist.errors, sep =''))
+    
+  } else if (corr_err == '0.8 Corr w/ X'){
+    
+    # carly to do some magic here
+    stop('this case is not coded up yet!')
+  
+  } else if (corr_err == '0.2 Corr w/ X'){
+    
+    # carly to do some magic here
+    stop('this case is not coded up yet!')
+    
+  }
   
   # generate the y's
   if (data.generating.mechanism == 'x'){
     y <- x + err
-  } else if (data.generating.mechanism == 'x^2'){
-    y <- x^2 + err  
-  } else if (data.generating.mechanism == 'x^3'){
-    y <- x^3 + err  
+  } else if (data.generating.mechanism == 'x + x^2'){
+    y <- x + x^2 + err  
+  } else if (data.generating.mechanism == 'x + x^2 + x^3'){
+    y <- x + x^2 + x^3 + err  
   } else if (data.generating.mechanism == 'sqrt(x)'){
     y <- sqrt(x) + err 
   } else if (data.generating.mechanism == 'log(x)'){
@@ -45,8 +76,10 @@ generate_Simulated_Data <- function(n, dist.errors, data.generating.mechanism)
                         sep='')
   sim.data <- data.frame(x=x, y=y, n = rep(n, length(x)),
                          dist_errors = rep(dist.errors, length(x)),
+                         Homoscedasticity = rep(corr_err, length(x)),
                          data_gen_mech = rep(data.generating.mechanism, length(x)),
-                         sim_type = rep(sim.data.lab, length(x)))
+                         sim_type = rep(sim.data.lab, length(x)),
+                         rep_num = r)
   return(sim.data)
 }
 
@@ -55,25 +88,31 @@ generate_Simulated_Data <- function(n, dist.errors, data.generating.mechanism)
 ######################################################
 
 # sample size
-n <- c(10, 25, 75, 250, 1000)
+num_replicates = 2 # for testing; do 1000 for real thing
+n <- c(20, 100, 1000)
 
 # distribution of the errors
 dist.errors <- c('Normal(0,1)', 
                  'Normal(0,2)',
-                 'Log normal',
-                 'Gamma',
-                 'Chi-squared',
-                 'Beta',
-                 'Weibull',
-                 'Exponential')
-# this is a shorter version for testing
-dist.errors <- c('Normal(0,1)',
-                 'Normal(0,2)')
+                 'Cauchy(loc=0, scale=1)',
+                 'Student-t(df=2)',
+                 'Log normal(0,1)',
+                 'Gamma(5,1)',
+                 'Chi-squared(df=3)',
+                 'Beta(5,1)',
+                 'Weibull(1,1)',
+                 'Exponential(1)')
+
+Homoscedasticity <- c('Independent',
+                      '0.8 Corr w/ X',
+                      '0.2 Corr w/ X')
+# for testing
+Homoscedasticity <- c('Independent')
 
 # how to generate the y
 data.generating.mechanism <- c('x',
-                               'x^2',
-                               'x^3',
+                               'x + x^2',
+                               'x + x^2 + x^3',
                                'sqrt(x)',
                                'log(x)',
                                'exp(x)')
@@ -87,12 +126,21 @@ for (sample_size in n){
   
   for (err in dist.errors){
     
-    for (dat.gen.mech in data.generating.mechanism){
-      
-      sim.data.temp <- generate_Simulated_Data(sample_size, err, 
-                                          dat.gen.mech)
-      sim.data <- rbind(sim.data, sim.data.temp)
-    } # for (dat.gen.mech in data.generating.mechanism){
+    for (corr_err in Homoscedasticity){
+    
+      for (dat.gen.mech in data.generating.mechanism){
+        
+        for (r in 1:num_replicates){
+        
+          sim.data.temp <- generate_Simulated_Data(sample_size, err, corr_err,
+                                                   dat.gen.mech, r)
+          sim.data <- rbind(sim.data, sim.data.temp)
+          
+        } # end for (r in 1:num_replicates){
+        
+      } # end for (dat.gen.mech in data.generating.mechanism){
+    
+    } # for (corr_err in Homoscedasticity){
     
   } # end for (err in dist.errors){
   
