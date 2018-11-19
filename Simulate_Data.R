@@ -3,12 +3,26 @@
 # Purpose:
 #   R script to simulate training and test 
 #   data for our supervised machine learning algo
-# Last Modified by SM 11/14/2018
+# Last Modified by CB 11/19/2018
 
 rm(list=ls())
 setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project/')
 library(truncnorm)
 set.seed(1)
+
+# create a function to produce errors which are correlated with the x-variable
+create_corr_errors <- function(var1,var2,r){
+  
+  #var1 is the first variable, which remains unchanged (X in our case)
+  #var2 is the second variable, which will be transformed (e in our case)
+  #r is the correlation, 0 <= r <= 1
+  
+  indep.mat <- cbind(var1,var2) %*% solve(chol(var(cbind(var1,var2))))
+  my.corr <- matrix(c(1,r,r,1),nrow=2,ncol=2)
+  correlated.data <- indep.mat %*% chol(my.corr) * sd(var1)
+  
+  return(correlated.data[,2]) #returns the 2nd column of the matrix, which is the transformed var2
+}
 
 # create a function to simulate data
 generate_Simulated_Data <- function(n, dist.errors, corr_err,
@@ -45,14 +59,73 @@ generate_Simulated_Data <- function(n, dist.errors, corr_err,
     
   } else if (corr_err == '0.8 Corr w/ X'){
     
-    # carly to do some magic here
-    stop('this case is not coded up yet!')
+    if (dist.errors == 'Normal(0,1)'){
+      pre_err <- rnorm(n, 0, 1)
+      err <- create_corr_errors(x,pre_err,0.8)
+    } else if (dist.errors == 'Normal(0,2)'){
+      pre_err <- rnorm(n, 0, 2)
+      err <- create_corr_errors(x,pre_err,0.8)
+    } else if (dist.errors == 'Log normal(0,1)'){
+      pre_err <- rlnorm(n, 0, 1)
+      err <- create_corr_errors(x,pre_err,0.8)
+    } else if (dist.errors == 'Cauchy(loc=0, scale=1)'){
+      pre_err <- rcauchy(n, 0, 1)
+      err <- create_corr_errors(x,pre_err,0.8)
+    } else if (dist.errors == 'Student-t(df=2)'){
+      pre_err <- rt(n, 2)
+      err <- create_corr_errors(x,pre_err,0.8)
+    } else if (dist.errors == 'Gamma(5,1)'){
+      pre_err <- rgamma(n, 5, 1)
+      err <- create_corr_errors(x,pre_err,0.8)
+    } else if (dist.errors == 'Chi-squared(df=3)'){
+      pre_err <- rchisq(n, 3)
+      err <- create_corr_errors(x,pre_err,0.8)
+    } else if (dist.errors == 'Beta(5,1)'){
+      pre_err <- rbeta(n, 5, 1)
+      err <- create_corr_errors(x,pre_err,0.8)
+    } else if (dist.errors == 'Weibull(1,1)'){
+      pre_err <- rweibull(n, 1, 1)
+      err <- create_corr_errors(x,pre_err,0.8)
+    } else if (dist.errors == 'Exponential(1)'){
+      pre_err <- rexp(n, 1)
+      err <- create_corr_errors(x,pre_err,0.8)
+    } else stop(paste('Unknown Error Distribution: ',
+                      dist.errors, sep =''))
   
   } else if (corr_err == '0.2 Corr w/ X'){
     
-    # carly to do some magic here
-    stop('this case is not coded up yet!')
-    
+    if (dist.errors == 'Normal(0,1)'){
+      pre_err <- rnorm(n, 0, 1)
+      err <- create_corr_errors(x,pre_err,0.2)
+    } else if (dist.errors == 'Normal(0,2)'){
+      pre_err <- rnorm(n, 0, 2)
+      err <- create_corr_errors(x,pre_err,0.2)
+    } else if (dist.errors == 'Log normal(0,1)'){
+      pre_err <- rlnorm(n, 0, 1)
+      err <- create_corr_errors(x,pre_err,0.2)
+    } else if (dist.errors == 'Cauchy(loc=0, scale=1)'){
+      pre_err <- rcauchy(n, 0, 1)
+      err <- create_corr_errors(x,pre_err,0.2)
+    } else if (dist.errors == 'Student-t(df=2)'){
+      pre_err <- rt(n, 2)
+      err <- create_corr_errors(x,pre_err,0.2)
+    } else if (dist.errors == 'Gamma(5,1)'){
+      pre_err <- rgamma(n, 5, 1)
+      err <- create_corr_errors(x,pre_err,0.2)
+    } else if (dist.errors == 'Chi-squared(df=3)'){
+      pre_err <- rchisq(n, 3)
+      err <- create_corr_errors(x,pre_err,0.2)
+    } else if (dist.errors == 'Beta(5,1)'){
+      pre_err <- rbeta(n, 5, 1)
+      err <- create_corr_errors(x,pre_err,0.2)
+    } else if (dist.errors == 'Weibull(1,1)'){
+      pre_err <- rweibull(n, 1, 1)
+      err <- create_corr_errors(x,pre_err,0.2)
+    } else if (dist.errors == 'Exponential(1)'){
+      pre_err <- rexp(n, 1)
+      err <- create_corr_errors(x,pre_err,0.2)
+    } else stop(paste('Unknown Error Distribution: ',
+                      dist.errors, sep =''))
   }
   
   # generate the y's
@@ -109,7 +182,7 @@ Homoscedasticity <- c('Independent',
                       '0.8 Corr w/ X',
                       '0.2 Corr w/ X')
 # for testing
-Homoscedasticity <- c('Independent')
+# Homoscedasticity <- c('Independent')
 
 # how to generate the y
 data.generating.mechanism <- c('x',
