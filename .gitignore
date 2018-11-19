@@ -1,3 +1,3 @@
-simulated_data.RData
+*.RData
 .Rhistory
 *.csv
