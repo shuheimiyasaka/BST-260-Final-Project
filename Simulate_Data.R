@@ -6,6 +6,7 @@
 # Last Modified by SM 11/14/2018
 
 rm(list=ls())
+setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project/')
 library(truncnorm)
 set.seed(1)
 
@@ -72,7 +73,8 @@ generate_Simulated_Data <- function(n, dist.errors, corr_err,
   
   sim.data.lab <- paste('n=', toString(n), '; ',
                         'dist error: ', dist.errors, '; ',
-                        'data gen. mech.: ', data.generating.mechanism,
+                        'data gen. mech.: ', data.generating.mechanism, ' ',
+                        'rep: ', toString(r),
                         sep='')
   sim.data <- data.frame(x=x, y=y, n = rep(n, length(x)),
                          dist_errors = rep(dist.errors, length(x)),
@@ -88,7 +90,7 @@ generate_Simulated_Data <- function(n, dist.errors, corr_err,
 ######################################################
 
 # sample size
-num_replicates = 2 # for testing; do 1000 for real thing
+num_replicates = 10 # for testing; do 1000 for real thing
 n <- c(20, 100, 1000)
 
 # distribution of the errors
