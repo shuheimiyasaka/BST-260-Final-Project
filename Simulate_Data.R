@@ -147,4 +147,4 @@ for (sample_size in n){
 } # end for (sample_size in n){
 
 write.csv(sim.data, './simulated_data.csv')
-save.image('./simulated_data.RData')
+save(sim.data, file = "./simulated_data.RData")
