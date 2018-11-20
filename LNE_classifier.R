@@ -448,7 +448,7 @@ for (sim in unique(sim.data.test$sim_type)){
   if (test3.res.temp$p < alpha){
     test3.res.temp = 'Constant'
   } else test3.res.temp = 'Not constant variance'
-    
+  
   test4.res.temp <- ols_test_f(model)
   if (test4.res.temp$p < alpha){
     test4.res.temp = 'Constant'
