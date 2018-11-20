@@ -4,7 +4,7 @@
 # Last modified by SM 11/19/2018
 
 rm(list=ls())
-setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project/')
+setwd('/Users/shuheimiyasaka/Google Drive/BST 260 Final Project')
 load('simulated_data.RData')
 
 sim.data$error_lab_4_classification <- 'Not normal'
@@ -17,7 +17,7 @@ if (sum(query)>0){
 sim.data$err_var_lab_4_classification <- 'Not constant variance'
 query <- sim.data$Homoscedasticity == 'Independent'
 if (sum(query)>0){
-  sim.data$err_var_lab_4_classification[query] = 'Normal'
+  sim.data$err_var_lab_4_classification[query] = 'Constant'
 } else stop('unexpected case!')
 
 sim.data$linearity_lab_4_classification <- 'Non-linear'
