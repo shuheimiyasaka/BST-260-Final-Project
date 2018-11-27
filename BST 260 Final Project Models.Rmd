@@ -11,6 +11,10 @@ library(caret)
 library(VIM)
 library(mice)
 library(ggcorrplot)
+library(plotly)
+library(pROC)
+library(lubridate)
+library(glmnet)
 set.seed(1)
 ```
 
@@ -65,6 +69,15 @@ colnames(loan.dat)[cols.2.keep]
 
 loan.dat.subset <- loan.dat[, cols.2.keep]
 
+query = loan.dat$annual_inc == 0.
+query.na = is.na(query)
+if (sum(query.na) > 0){
+  query[query.na] = TRUE
+}
+if (sum(query) > 0){
+  loan.dat = loan.dat[!query,]
+} else stop('expecting only one case!')
+
 meta_loans <- funModeling::df_status(loan.dat.subset, print_results = FALSE)
 meta_loans
 ```
@@ -80,20 +93,63 @@ ggcorrplot(cor(loan.dat.subset[,numeric_cols]))
 # loan.dat = mice(loan.dat.subset, m=1)  # let's just impute one dataset
 # loan.dat = complete(loan.dat.subset, 1)
 ```
-Can't impute since its too large.
+Can't impute since the dataset is too large.
 
 ```{r}
 numeric_cols <- meta_loans$variable[meta_loans$type == 'numeric']
-par(mfrow=c(7,7), mar=c(3,1,1.5,1))
-for (j in 1:ncol(loan.dat.subset[numeric_cols])){
-  hist(loan.dat.subset[,j], xlab="", main=names(loan.dat.subset)[j]) 
-}
+# par(mfrow=c(7,7), mar=c(3,1,1.5,1))
+# for (j in 1:ncol(loan.dat.subset[numeric_cols])){
+#   hist(loan.dat.subset[,j], xlab="", main=names(loan.dat.subset)[j]) 
+# }
+# 
+# # Scatterplot of y vs each variable
+# par(mfrow=c(7,7),mar=c(3,1,1.5,1))
+# for (j in 1:ncol(loan.dat.subset[numeric_cols])){ 
+#   plot(D2[,j], y, xlab="", main=names(D2)[j], pch=20) 
+# }
+```
 
-# Scatterplot of y vs each variable
-par(mfrow=c(7,7),mar=c(3,1,1.5,1))
-for (j in 1:ncol(loan.dat.subset[numeric_cols])){ 
-  plot(D2[,j], y, xlab="", main=names(D2)[j], pch=20) 
+In our prediction model, we decided to predict the loan status. We dichotomized the loan status into "Good" and "Bad" based on the following criteria:
+Good
+1. Fully Paid
+2. Current
+3. Does not meet the credit policy. Status:Fully Paid
+Bad
+1. 
+2. 
+3.
+Since we are predicting loan status, we decided to drop records with `loan_status` with valuess `Issued`
+```{r}
+query <- loan.dat.subset$loan_status != 'Issued'
+loan.dat.subset <- loan.dat.subset[query, ]
+
+loan.dat.subset$loan_status_bin <- "Bad"
+query = loan.dat.subset$loan_status == 'Fully Paid' | loan.dat.subset$loan_status == 'Current' |
+  loan.dat.subset$loan_status == 'Does not meet the credit policy. Status:Fully Paid'
+loan.dat.subset$loan_status_bin[query] = 'Good'
+
+loan.dat.subset$loan_status_bin = as.factor(loan.dat.subset$loan_status_bin)
+```
+
+We also converted `funded_amnt_inv` to be percent funded amount by investors `perc_funded_amnt_inv`
+```{r}
+loan.dat.subset <- loan.dat.subset %>%
+  mutate(perc_funded_amnt_inv = funded_amnt_inv/funded_amnt,
+         issue_d = as.character(issue_d),
+         term = as.character(term)) %>%
+  mutate(year = as.numeric(str_sub(issue_d, start = -4)))
+
+query <- loan.dat.subset$term == ' 36 months'
+loan.dat.subset$term[query] = 'Short'
+loan.dat.subset$term[!query] = 'Long'
+loan.dat.subset$term = as.factor(loan.dat.subset$term)
+
+query.na <- is.na(loan.dat.subset$tot_coll_amt)
+if (sum(query.na) >0){
+  loan.dat.subset$tot_coll_amt[query.na] = 0
 }
+loan.dat.subset <- loan.dat.subset %>%
+  mutate(tot_coll_amt_gt0 = as.factor(tot_coll_amt > 0.))
 ```
 
 ```{r}
@@ -106,10 +162,106 @@ We now onlhy have 50 convariates. after removing 24.
 
 ## Building a Prediction Model
 ```{r}
+outcome <- c('loan_status_bin')
+# think about adding zip_code back in 
+# if we run it on the cluster
+predictors <- c('loan_amnt', 'funded_amnt',
+                'int_rate', 'grade',
+                'emp_length', 'home_ownership',
+                'annual_inc', 'verification_status',
+                'purpose',
+                'addr_state', 'dti',
+                'delinq_2yrs', 'inq_last_6mths',
+                'open_acc', 'pub_rec', 
+                'revol_bal', 'revol_util',
+                'total_acc', 'initial_list_status',
+                'application_type', 'acc_now_delinq',
+                'tot_coll_amt_gt0', 'tot_cur_bal',
+                'total_rev_hi_lim', 'perc_funded_amnt_inv',
+                'term', 'year')
 
+loan.dat.subset <- loan.dat.subset[, c(outcome, predictors)]
 
+meta_loans <- funModeling::df_status(loan.dat.subset, print_results = FALSE)
+meta_loans[order(-meta_loans$p_na),]
+
+sum(is.na(loan.dat.subset$loan_status_bin))
+
+for (j in 1:ncol(loan.dat.subset)){
+  miss = is.na(loan.dat.subset[,j])
+  if (sum(miss) > 0){
+    loan.dat.subset[miss, j] = mean(loan.dat.subset[,j], na.rm=T)
+  }
+}
+sum(is.na(loan.dat.subset))
+
+summary(loan.dat.subset)
+```
+
+```{r}
+train.control = trainControl(method="repeatedcv", number=10, repeats=1, 
+                    classProbs=T, summaryFunction=twoClassSummary)
+models = c("ridge", "lasso", "enet")
+tune.grid <- expand.grid(k = seq(10,100,by=10))
+n_models = length(models)
+
+# test.indx2 <- sample(1:dim(loan.dat.subset)[1], 10000, replace = FALSE)
+# fit <- glm(loan_status_bin ~., family=binomial(link='logit'),
+#            data=loan.dat.subset[test.indx2, ])
+# summary(fit)
+
+# x = model.matrix(loan_status_bin ~ ., loan.dat.subset)[test.indx2,-1]
+# y = loan.dat.subset$loan_status_bin[test.indx2]
+# fit.lasso <- cv.glmnet(x=x, y=y, family="binomial", alpha=1)
+# fit.lasso
+# coef.min = coef(fit.lasso, s = "lambda.min")
+# coef.min
+# 
+# fit.enet <- cv.glmnet(x=x, y=y, family="binomial", alpha=0.5)
+# fit.enet
+# 
+# fit.ridge <- cv.glmnet(x=x, y=y, family="binomial", alpha=0)
+# fit.ridge
+
+AUC = rep(0,n_models)
+names(AUC) = models
+for (m in 1:n_models) {
+  
+    fit = train(loan.dat.subset$loan_status_bin[train.indx] ~., 
+                data=loan.dat.subset[train.indx, ], 
+                method=models[m], metric="ROC", trControl=train.control,
+                tuneGrid=tune.grid)  
+    
+    # save our results
+    if (models[m] == 'ridge'){
+      fit.ridge <- fit
+    } else if (models[m] == 'lasso'){
+      fit.lasso <- fit
+    } else if (models[m] == 'enet'){
+      fit.enet <- fit
+    }
+    
+    probs = predict(fit, loan.dat.subset[test.indx,], type="prob")
+    
+    R = roc(loan.dat.subset$loan_status_bin[test.indx], probs$Yes)
+    
+    plot.roc(R, add=(m>1), col=m, lwd=2, main="ROC curves")
+    
+    legend("bottomright", legend=models, col=1:n_models, lwd=2)
+
+    AUC[m] = R$auc
+}
+AUC
+
+save(fit.ridge, fit.lasso, fit.enet, file = "./models.RData")
 ```
 ## Building an Assocation Model
 
 ## Conclusions
+
+
+
+
+
+
 
