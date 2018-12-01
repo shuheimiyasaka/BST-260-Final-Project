@@ -5,7 +5,7 @@ output:
     df_print: paged
 ---
 
-```{r}
+```{r, message=FALSE}
 rm(list = ls())
 library(tidyverse)
 library(funModeling)
@@ -23,7 +23,7 @@ set.seed(1)
 
 ## Motivation
 
-The goal for our final project was to build a prediction model using the LendingClub loans data set. We wanted to build a model that could predict the a dichotomized outcome of loan status (which will be explained in more detail below) using the variables given in the data set. In this web page, we will walk you through our process for building our final prediction model.
+The goal for our final project was to build a prediction model using the LendingClub loans data set. We wanted to build a model that could predict a dichotomized outcome of loan status (which will be explained in more detail below) using the variables given in the data set. In this page, we will walk you through our process for building our final prediction model.
 
 ## Data Exploration
 
@@ -50,7 +50,7 @@ meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
 meta_loans[order(-meta_loans$p_na),]
 ```
 
-As part of data exploration, we examined with percentage of "zeros", missing records, and unique values in our data set per variable as shown above. From the table above, we notice quite a variables with a lot of missing data.
+As part of data exploration, we examined with percentage of "zeros", missing records, and unique values in the data set per variable as shown above. From the table above, we notice a number of variables with significant amount of missing data.
 
 Based on examining the data set and reading the data dictionary, we decided to immediately rule out the following variables from our model: `id`, `member_id`, `url`, and `desc`.
 ```{r}
@@ -80,7 +80,7 @@ length(colnames(loan.dat)[cols.2.keep])
 loan.dat <- loan.dat[, cols.2.keep]
 ```
 
-We also decided to remove 6 records with missing or zero annual income since this is a covariate we definitely wanted to include in our model (and didn't feel we could impute these values properly)!
+We also decided to remove 6 records with missing or zero annual income since we felt this information was a requirement for obtaining a loan and a covariate that we must definitely include in our final model (and didn't feel we could impute these values properly)!
 ```{r}
 query = loan.dat$annual_inc == 0.
 query.na = is.na(query)
@@ -92,7 +92,7 @@ if (sum(query) > 0){
 } else stop('unexpected case')
 ```
 
-We the remaining set of records and covariates, we decided to examine the pairwise correlation of covariates:
+With the remaining set of records and covariates, we decided to examine the pairwise correlation of covariates:
 ```{r}
 meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
 numeric_cols <- meta_loans$variable[meta_loans$type == 'numeric']
@@ -106,6 +106,8 @@ plot_ly(x=colnames(cor.dat),
 #aggr(loan.dat, combined=T, cex.axis=0.6)
 ```
 
+We notice from the plot above that there are a few covariates that are highly correlated (which is not unexpected).
+
 We also calculated basic summary statistics of our covariates to help us better understand the data:
 ```{r}
 summary(loan.dat)
@@ -113,18 +115,21 @@ summary(loan.dat)
 
 # Feature Engineering
 
+After conducting a preliminary data exploration, we got a much better sense of our dataset. Based on what we learned, we dropped further covariates and re-categorized some of the variables which we will explain in this section.
+
 In our prediction model, we decided to predict loan status. We dichotomized loan status into "Good" and "Bad" based on the following criteria:
-Good
-1. Fully Paid
-2. Current
-3. Does not meet the credit policy. Status:Fully Paid
-Bad
-1. Default 
+**Good**  
+1. Fully Paid  
+2. Current  
+3. Does not meet the credit policy. Status:Fully Paid  
+
+**Bad**  
+1. Default  
 2. Charged Off  
-3. Late (16-30 days)  
+3. Late (16-30 days)   
 4. Late (31-120 days)  
-5. In Grace Period 
-6. Does not meet the credit policy. Status:Charged Off
+5. In Grace Period  
+6. Does not meet the credit policy. Status:Charged Off  
 
 Since we are predicting loan status using our model, we decided to drop records with `loan_status` with values `Issued`:
 ```{r}
@@ -148,7 +153,7 @@ loan.dat <- loan.dat %>%
   mutate(year = as.numeric(str_sub(issue_d, start = -4)))
 ```
 
-We reclassified a 36 month loan to "Short" and and 60 month loan to "Long".
+We reclassified a 36 month loan to "Short" and a 60 month loan to "Long".
 ```{r}
 query <- loan.dat$term == ' 36 months'
 loan.dat$term[query] = 'Short'
@@ -166,7 +171,7 @@ loan.dat <- loan.dat %>%
   mutate(tot_coll_amt_gt0 = as.factor(tot_coll_amt > 0.))
 ```
 
-Based on examining the uni-variate plots and the correlation plot, we decided to keep the following 27 covariates:
+Based on examining the uni-variate plots and the correlation plot, we decided to keep the following 27 covariates:  
 ### we can probably add a more detailed reason for dropping certain columns as outline in google docs
 ```{r}
 predictors <- c('loan_amnt', 'funded_amnt',
@@ -193,7 +198,7 @@ loan.dat <- loan.dat[, c(outcome, predictors)]
 ```
 
 We also did a simple uni-variate analysis of the covariates using histograms and boxplots:
-```{r}
+```{r, message=FALSE}
 meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
 numeric_cols <- meta_loans$variable[meta_loans$type == 'numeric']
 
@@ -205,7 +210,7 @@ for (col_name in numeric_cols){
 }
 ```
 
-```{r}
+```{r, message=FALSE}
 for (col_name in numeric_cols){
   plt <- loan.dat %>% ggplot(aes(x=loan_status_bin, loan.dat[, col_name])) +
     geom_boxplot() + 
@@ -214,7 +219,7 @@ for (col_name in numeric_cols){
 }
 ```
 
-We still have a few records with missing data. We initially tried imputing these values using the `mice` package but due to computational reasons, we decided to drop this idea.
+At this point, we still had a few records with missing data. We initially tried imputing these values using the `mice` package but due to computational reasons, we decided to drop this idea.
 ```{r}
 meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
 meta_loans[order(-meta_loans$p_na),]
@@ -237,7 +242,7 @@ sum(is.na(loan.dat))
 ```
 
 Here is a final basic summary statistics of the remaining covariates:
-```{r}
+```{r, echo=FALSE}
 summary(loan.dat)
 setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
 save(loan.dat, file = "./loan.dat.RData")
@@ -245,12 +250,12 @@ save(loan.dat, file = "./loan.dat.RData")
 
 ## Building the Prediction Model
 
-We decided to evaluate three models:
-1. Ridge
-2. Lasso 
-3. Elastic Net
+In building our prediction model, we considered three different models:  
+1. Ridge  
+2. Lasso  
+3. Elastic Net  
 
-In evaluating our model, we picked our final model based on the best test performance (i.e., largest AUC). We kept about a fifth of a data (200,000 records) for testing and used the rest for training our models. We trained our candidate models using 10-fold cross-validation (on the training set) to obtain the optimal tuning parameters and finally tested their performance on the test data set. 
+Among the three options, we picked our final model based on the best test performance (i.e., largest AUC). We kept about a fifth of a data (200,000 records) for testing and used the rest for training our models. We trained our candidate models using 10-fold cross-validation (on the training set) to obtain the optimal tuning parameters and finally tested their performance on the test data set. 
 
 ```{r, eval=FALSE}
 # This chunk takes a very very long time to run!!!
@@ -397,7 +402,7 @@ for (m in 1:n_models) {
 AUC
 ```
 
-The AUC values for all three models are similar. However, elastic net model \(\alpha=0.05\) and \(\lambda=0.0001220703\) had the largest AUC. Therefore, for our final prediction model, decided to use the elastic net model with \(\alpha=0.05\) and \(\lambda=0.0001220703\) and retrained the model with all data.
+The AUC for all three models are similar. However, elastic net model (with \(\alpha=0.05\) and \(\lambda=0.0001220703\)) had the largest AUC. Therefore, we decided to use the elastic net model (with \(\alpha=0.05\) and \(\lambda=0.0001220703\)) as our final model and retrained the elastic net model with these parameters using all data.
 ```{r}
 x = model.matrix(loan_status_bin ~ ., loan.dat)[,-1]
 y = loan.dat$loan_status_bin
@@ -410,7 +415,7 @@ final_mod = glmnet(x=x, y=y, family = 'binomial', alpha = 0.05,
 
 ## Results
 
-So our final model is an elastic net model (\(\alpha=0.05\) and \(\lambda=0.0001220703\)) with the following regression coefficients:
+Here is our final elastic net model (\(\alpha=0.05\) and \(\lambda=0.0001220703\)) with the following regression coefficients:
 ```{r}
 coef(final_mod)
 ```
