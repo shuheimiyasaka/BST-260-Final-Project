@@ -1,9 +1,43 @@
-library(plotly)
 library(dplyr)
 load('/Users/laramaleyeff/Downloads/loan.Rdata')
 set.seed(100)
+
+library(plotly)
 d <- loan.dat[sample(nrow(loan.dat), 1000), ]
-attach(d)
+d<-d[,c(3,4,7,14,24,9)]
+data <-cor(d,d)
+plot_ly(x=colnames(data), y=rownames(data), z = data, type = "heatmap", colorscale="Greys")
+
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+df <- d %>% group_by(addr_state) %>% summarize(grade=getmode(grade),loan_amnt=mean(loan_amnt))
+
+
+df$hover <- with(df, paste(addr_state, '<br>', "Grade", grade))
+l <- list(color = toRGB("white"), width = 2)
+
+g <- list(
+  scope = 'usa',
+  projection = list(type = 'albers usa'),
+  showlakes = TRUE,
+  lakecolor = toRGB('white')
+)
+
+p_states <- plot_geo(df, locationmode = 'USA-states') %>%
+  add_trace(
+    z = ~loan_amnt, text = ~hover, locations = ~addr_state,
+    color = ~loan_amnt, colors = 'Purples'
+  ) %>%
+  colorbar(title = "Loan amount ($)") %>%
+  layout(
+    title = 'State',
+    geo = g
+  )
+
+df1 <- read.csv("https://raw.githubusercontent.com/plotly/datasets/master/2011_us_ag_exports.csv")
+
 plot_ly(d, x = annual_inc, y = loan_amnt, text = paste("Grade: ", grade),
         mode = "markers", color = loan_amnt, size = loan_amnt)%>%
   layout(
