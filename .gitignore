@@ -1,5 +1,7 @@
-*.xlsx
+!final_model.RData
 *.RData
+!final_model.RData
+*.xlsx
 .Rhistory
 *.csv
 Archive
