@@ -1,6 +1,8 @@
 ---
-title: "Building Assocation and Prediction Models for the Loans Dataset"
-output: html_notebook
+title: "Building a Prediction Model for the LendingClub Loans Dataset"
+output:
+  html_document:
+    df_print: paged
 ---
 
 ```{r}
@@ -15,10 +17,17 @@ library(plotly)
 library(pROC)
 library(lubridate)
 library(glmnet)
+library(plotly)
 set.seed(1)
 ```
 
+## Motivation
+
+The goal for our final project was to build a prediction model using the LendingClub loans data set. We wanted to build a model that could predict the a dichotomized outcome of loan status (which will be explained in more detail below) using the variables given in the data set. In this web page, we will walk you through our process for building our final prediction model.
+
 ## Data Exploration
+
+Lara, can you explain where and how you got the data set?
 
 ```{r}
 setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
@@ -30,45 +39,49 @@ load('loan.Rdata')
 #write.csv(loan.dat[extract.3000, ], './loan_subset3000.csv')
 ```
 
+The data set has 887,379 records with 74 variables.
 ```{r}
 dim(loan.dat)
-meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
-meta_loans
+names(loan.dat)
 ```
 
-We have a data set with 887,379 records and 74 covariates.
-From the above table, we notice quite a few missing data.
+```{r}
+meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
+meta_loans[order(-meta_loans$p_na),]
+```
 
+As part of data exploration, we examined with percentage of "zeros", missing records, and unique values in our data set per variable as shown above. From the table above, we notice quite a variables with a lot of missing data.
+
+Based on examining the data set and reading the data dictionary, we decided to immediately rule out the following variables from our model: `id`, `member_id`, `url`, and `desc`.
 ```{r}
 cols.2.remove <- c('id', 'member_id', 'url', 'desc')
 ```
 
-We immediately ruled out the following covariates in our model:
-1) id
-2) member_id
-3) url
-4) desc
-
+We decided to exclude variables with more than 10% missing data (19 variables).
 ```{r}
-meta_loans[order(-meta_loans$p_na),]
 missing.data.col <- meta_loans$variable[meta_loans$p_na > 10.]
-
+missing.data.col
+length(missing.data.col)
 cols.2.remove <- c(cols.2.remove, missing.data.col)
 ```
 
-We also decided to remove records with more than 10% missing data.
 ```{r}
 meta_loans[order(meta_loans$unique),]
 cols.2.remove <- c(cols.2.remove, 'policy_code')
 ```
-We also decided to remove `policy_code` sign it only has one unique value
+We also decided to remove `policy_code` since it only has one unique value.
 
+At this point, we had 50 potential covariates:
 ```{r}
 cols.2.keep <- !(colnames(loan.dat) %in% cols.2.remove)
 colnames(loan.dat)[cols.2.keep]
+length(colnames(loan.dat)[cols.2.keep])
 
-loan.dat.subset <- loan.dat[, cols.2.keep]
+loan.dat <- loan.dat[, cols.2.keep]
+```
 
+We also decided to remove 6 records with missing or zero annual income since this is a covariate we definitely wanted to include in our model (and didn't feel we could impute these values properly)!
+```{r}
 query = loan.dat$annual_inc == 0.
 query.na = is.na(query)
 if (sum(query.na) > 0){
@@ -76,95 +89,86 @@ if (sum(query.na) > 0){
 }
 if (sum(query) > 0){
   loan.dat = loan.dat[!query,]
-} else stop('expecting only one case!')
-
-meta_loans <- funModeling::df_status(loan.dat.subset, print_results = FALSE)
-meta_loans
+} else stop('unexpected case')
 ```
 
+We the remaining set of records and covariates, we decided to examine the pairwise correlation of covariates:
 ```{r}
+meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
 numeric_cols <- meta_loans$variable[meta_loans$type == 'numeric']
 
-ggcorrplot(cor(loan.dat.subset[,numeric_cols]))
-#aggr(loan.dat.subset, combined=T, cex.axis=0.6)
+cor.dat <- cor(loan.dat[,numeric_cols], loan.dat[,numeric_cols])
+plot_ly(x=colnames(cor.dat), 
+        y=rownames(cor.dat), 
+        z = cor.dat, type = "heatmap", colorscale="Greys")
+
+#ggcorrplot(cor(loan.dat[,numeric_cols]))
+#aggr(loan.dat, combined=T, cex.axis=0.6)
 ```
 
+We also calculated basic summary statistics of our covariates to help us better understand the data:
 ```{r}
-# loan.dat = mice(loan.dat.subset, m=1)  # let's just impute one dataset
-# loan.dat = complete(loan.dat.subset, 1)
-```
-Can't impute since the dataset is too large.
-
-```{r}
-numeric_cols <- meta_loans$variable[meta_loans$type == 'numeric']
-# par(mfrow=c(7,7), mar=c(3,1,1.5,1))
-# for (j in 1:ncol(loan.dat.subset[numeric_cols])){
-#   hist(loan.dat.subset[,j], xlab="", main=names(loan.dat.subset)[j]) 
-# }
-# 
-# # Scatterplot of y vs each variable
-# par(mfrow=c(7,7),mar=c(3,1,1.5,1))
-# for (j in 1:ncol(loan.dat.subset[numeric_cols])){ 
-#   plot(D2[,j], y, xlab="", main=names(D2)[j], pch=20) 
-# }
+summary(loan.dat)
 ```
 
-In our prediction model, we decided to predict the loan status. We dichotomized the loan status into "Good" and "Bad" based on the following criteria:
+# Feature Engineering
+
+In our prediction model, we decided to predict loan status. We dichotomized loan status into "Good" and "Bad" based on the following criteria:
 Good
 1. Fully Paid
 2. Current
 3. Does not meet the credit policy. Status:Fully Paid
 Bad
-1. 
-2. 
-3.
-Since we are predicting loan status, we decided to drop records with `loan_status` with valuess `Issued`
+1. Default 
+2. Charged Off  
+3. Late (16-30 days)  
+4. Late (31-120 days)  
+5. In Grace Period 
+6. Does not meet the credit policy. Status:Charged Off
+
+Since we are predicting loan status using our model, we decided to drop records with `loan_status` with values `Issued`:
 ```{r}
-query <- loan.dat.subset$loan_status != 'Issued'
-loan.dat.subset <- loan.dat.subset[query, ]
+query <- loan.dat$loan_status != 'Issued'
+loan.dat <- loan.dat[query, ]
 
-loan.dat.subset$loan_status_bin <- "Bad"
-query = loan.dat.subset$loan_status == 'Fully Paid' | loan.dat.subset$loan_status == 'Current' |
-  loan.dat.subset$loan_status == 'Does not meet the credit policy. Status:Fully Paid'
-loan.dat.subset$loan_status_bin[query] = 'Good'
+loan.dat$loan_status_bin <- "Bad"
+query = loan.dat$loan_status == 'Fully Paid' | loan.dat$loan_status == 'Current' |
+  loan.dat$loan_status == 'Does not meet the credit policy. Status:Fully Paid'
+loan.dat$loan_status_bin[query] = 'Good'
 
-loan.dat.subset$loan_status_bin = as.factor(loan.dat.subset$loan_status_bin)
+loan.dat$loan_status_bin = as.factor(loan.dat$loan_status_bin)
 ```
 
-We also converted `funded_amnt_inv` to be percent funded amount by investors `perc_funded_amnt_inv`
+We also converted `funded_amnt_inv` to be percent funded amount by investors `perc_funded_amnt_inv` and only use the year from issue date (`issue_d`):
 ```{r}
-loan.dat.subset <- loan.dat.subset %>%
+loan.dat <- loan.dat %>%
   mutate(perc_funded_amnt_inv = funded_amnt_inv/funded_amnt,
          issue_d = as.character(issue_d),
          term = as.character(term)) %>%
   mutate(year = as.numeric(str_sub(issue_d, start = -4)))
+```
 
-query <- loan.dat.subset$term == ' 36 months'
-loan.dat.subset$term[query] = 'Short'
-loan.dat.subset$term[!query] = 'Long'
-loan.dat.subset$term = as.factor(loan.dat.subset$term)
+We reclassified a 36 month loan to "Short" and and 60 month loan to "Long".
+```{r}
+query <- loan.dat$term == ' 36 months'
+loan.dat$term[query] = 'Short'
+loan.dat$term[!query] = 'Long'
+loan.dat$term = as.factor(loan.dat$term)
+```
 
-query.na <- is.na(loan.dat.subset$tot_coll_amt)
+We also dichotomized `tot_coll_amt` to 0 and greater than 0 (and replaced the missing values to zero):
+```{r}
+query.na <- is.na(loan.dat$tot_coll_amt)
 if (sum(query.na) >0){
-  loan.dat.subset$tot_coll_amt[query.na] = 0
+  loan.dat$tot_coll_amt[query.na] = 0
 }
-loan.dat.subset <- loan.dat.subset %>%
+loan.dat <- loan.dat %>%
   mutate(tot_coll_amt_gt0 = as.factor(tot_coll_amt > 0.))
 ```
 
+Based on examining the uni-variate plots and the correlation plot, we decided to keep the following 27 covariates:
+### we can probably add a more detailed reason for dropping certain columns as outline in google docs
 ```{r}
-# keep a fifth of the data set to assess test performance
-test.indx <- sample(1:dim(loan.dat.subset)[1], 200000, replace = FALSE)
-train.indx <- setdiff(1:dim(loan.dat.subset)[1], test.indx)
-```
-
-We now onlhy have 50 convariates. after removing 24.
-
-## Building a Prediction Model
-```{r}
-outcome <- c('loan_status_bin')
-# think about adding zip_code back in 
-# if we run it on the cluster
 predictors <- c('loan_amnt', 'funded_amnt',
                 'int_rate', 'grade',
                 'emp_length', 'home_ownership',
@@ -179,39 +183,108 @@ predictors <- c('loan_amnt', 'funded_amnt',
                 'tot_coll_amt_gt0', 'tot_cur_bal',
                 'total_rev_hi_lim', 'perc_funded_amnt_inv',
                 'term', 'year')
-
-loan.dat.subset <- loan.dat.subset[, c(outcome, predictors)]
-
-meta_loans <- funModeling::df_status(loan.dat.subset, print_results = FALSE)
-meta_loans[order(-meta_loans$p_na),]
-
-sum(is.na(loan.dat.subset$loan_status_bin))
-
-for (j in 1:ncol(loan.dat.subset)){
-  miss = is.na(loan.dat.subset[,j])
-  if (sum(miss) > 0){
-    loan.dat.subset[miss, j] = mean(loan.dat.subset[,j], na.rm=T)
-  }
-}
-sum(is.na(loan.dat.subset))
-
-summary(loan.dat.subset)
+predictors
 ```
 
 ```{r}
+outcome <- c('loan_status_bin')
+
+loan.dat <- loan.dat[, c(outcome, predictors)]
+```
+
+We also did a simple uni-variate analysis of the covariates using histograms and boxplots:
+```{r}
+meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
+numeric_cols <- meta_loans$variable[meta_loans$type == 'numeric']
+
+for (col_name in numeric_cols){
+  plt <- loan.dat %>% ggplot(aes(loan.dat[, col_name])) +
+    geom_histogram(color = "black") + 
+    ggtitle(col_name) + labs(x=col_name) 
+  print(plt)
+}
+```
+
+```{r}
+for (col_name in numeric_cols){
+  plt <- loan.dat %>% ggplot(aes(x=loan_status_bin, loan.dat[, col_name])) +
+    geom_boxplot() + 
+    ggtitle(col_name) + labs(x='Loan Status', y=col_name)
+  print(plt)
+}
+```
+
+We still have a few records with missing data. We initially tried imputing these values using the `mice` package but due to computational reasons, we decided to drop this idea.
+```{r}
+meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
+meta_loans[order(-meta_loans$p_na),]
+
+# loan.dat = mice(loan.dat, m=1)  # let's just impute one dataset
+# loan.dat = complete(loan.dat, 1)
+```
+
+Instead, we decided to set the missing values to the mean using the rest of the data:
+```{r}
+sum(is.na(loan.dat$loan_status_bin))
+
+for (j in 1:ncol(loan.dat)){
+  miss = is.na(loan.dat[,j])
+  if (sum(miss) > 0){
+    loan.dat[miss, j] = mean(loan.dat[,j], na.rm=T)
+  }
+}
+sum(is.na(loan.dat))
+```
+
+Here is a final basic summary statistics of the remaining covariates:
+```{r}
+summary(loan.dat)
+setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
+save(loan.dat, file = "./loan.dat.RData")
+```
+
+## Building the Prediction Model
+
+We decided to evaluate three models:
+1. Ridge
+2. Lasso 
+3. Elastic Net
+
+In evaluating our model, we picked our final model based on the best test performance (i.e., largest AUC). We kept about a fifth of a data (200,000 records) for testing and used the rest for training our models. We trained our candidate models using 10-fold cross-validation (on the training set) to obtain the optimal tuning parameters and finally tested their performance on the test data set. 
+
+```{r, eval=FALSE}
+# This chunk takes a very very long time to run!!!
+# I ran this overnight on my laptop and 
+# saved the results
+# That's why eval is set to FALSE
+
+setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
+load('loan.dat.Rdata')
+
+# keep a fifth of the data set to assess test performance
+set.seed(1)
+test.indx <- sample(1:dim(loan.dat)[1], 200000, replace = FALSE)
+train.indx <- setdiff(1:dim(loan.dat)[1], test.indx)
+
+# this is to debug the code
+# small.data.indx <- sample(1:dim(loan.dat)[1], 10000, replace = FALSE)
+# loan.dat <- loan.dat[small.data.indx, ]
+# test.indx <- sample(1:dim(loan.dat)[1], 500, replace = FALSE)
+# train.indx <- setdiff(1:dim(loan.dat)[1], test.indx)
+
 train.control = trainControl(method="repeatedcv", number=10, repeats=1, 
                     classProbs=T, summaryFunction=twoClassSummary)
+#models = c("ridge", "lasso", "enet", "adaboost")
 models = c("ridge", "lasso", "enet")
-tune.grid <- expand.grid(k = seq(10,100,by=10))
 n_models = length(models)
 
-# test.indx2 <- sample(1:dim(loan.dat.subset)[1], 10000, replace = FALSE)
+# test.indx2 <- sample(1:dim(loan.dat)[1], 10000, replace = FALSE)
 # fit <- glm(loan_status_bin ~., family=binomial(link='logit'),
-#            data=loan.dat.subset[test.indx2, ])
+#            data=loan.dat[test.indx2, ])
 # summary(fit)
 
-# x = model.matrix(loan_status_bin ~ ., loan.dat.subset)[test.indx2,-1]
-# y = loan.dat.subset$loan_status_bin[test.indx2]
+# x = model.matrix(loan_status_bin ~ ., loan.dat)[test.indx2,-1]
+# y = loan.dat$loan_status_bin[test.indx2]
 # fit.lasso <- cv.glmnet(x=x, y=y, family="binomial", alpha=1)
 # fit.lasso
 # coef.min = coef(fit.lasso, s = "lambda.min")
@@ -226,24 +299,49 @@ n_models = length(models)
 AUC = rep(0,n_models)
 names(AUC) = models
 for (m in 1:n_models) {
-  
-    fit = train(loan.dat.subset$loan_status_bin[train.indx] ~., 
-                data=loan.dat.subset[train.indx, ], 
-                method=models[m], metric="ROC", trControl=train.control,
-                tuneGrid=tune.grid)  
+    
+    print_str <- paste("Training model: ",
+                       models[m], sep='')
+    print(print_str)
     
     # save our results
     if (models[m] == 'ridge'){
+      
+      fit = train(loan_status_bin ~., 
+                  data=loan.dat[train.indx, ], 
+                  method="glmnet", metric="ROC", trControl=train.control,
+                  tuneGrid=expand.grid(alpha = 0, lambda = .5 ^ (-20:20)))  
+      
       fit.ridge <- fit
     } else if (models[m] == 'lasso'){
+      
+      fit = train(loan_status_bin ~., 
+                  data=loan.dat[train.indx, ], 
+                  method="glmnet", metric="ROC", trControl=train.control,
+                  tuneGrid=expand.grid(alpha = 1, lambda = .5 ^ (-20:20)))      
+
       fit.lasso <- fit
     } else if (models[m] == 'enet'){
+      
+      fit = train(loan_status_bin ~., 
+                  data=loan.dat[train.indx, ], 
+                  method="glmnet", metric="ROC", trControl=train.control,
+                  tuneGrid=expand.grid(alpha = seq(.05,.95,.05), lambda = .5 ^ (-20:20)))     
+
       fit.enet <- fit
-    }
+    } else if (models[m] == 'adaboost'){
+
+      fit = train(loan_status_bin ~., 
+            data=loan.dat[train.indx, ], 
+            method=models[m], metric="ROC", trControl=train.control)
+  
+      fit.adaboost <- fit
+      
+    } else('Unknown model type!')
     
-    probs = predict(fit, loan.dat.subset[test.indx,], type="prob")
+    probs = predict(fit, loan.dat[test.indx,], type="prob")
     
-    R = roc(loan.dat.subset$loan_status_bin[test.indx], probs$Yes)
+    R = roc(loan.dat$loan_status_bin[test.indx], probs$Good)
     
     plot.roc(R, add=(m>1), col=m, lwd=2, main="ROC curves")
     
@@ -253,15 +351,68 @@ for (m in 1:n_models) {
 }
 AUC
 
+setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
 save(fit.ridge, fit.lasso, fit.enet, file = "./models.RData")
+#save(fit.ridge, fit.lasso, fit.enet, fit.adaboost, file = "./models.RData")
 ```
-## Building an Assocation Model
 
-## Conclusions
+```{r, echo=FALSE}
+# This is so that I can work and knit my markdown in reasonable time
+setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
+load('loan.dat.Rdata')
+load('models.Rdata')
 
+set.seed(1)
+test.indx <- sample(1:dim(loan.dat)[1], 200000, replace = FALSE)
+train.indx <- setdiff(1:dim(loan.dat)[1], test.indx)
 
+models = c("ridge", "lasso", "enet")
+n_models = length(models)
 
+AUC = rep(0, n_models)
+names(AUC) = models
+for (m in 1:n_models) {
+    
+    # save our results
+    if (models[m] == 'ridge'){
+      fit = fit.ridge
+    } else if (models[m] == 'lasso'){
+      fit = fit.lasso
+    } else if (models[m] == 'enet'){
+      fit = fit.enet
+    } else if (models[m] == 'adaboost'){
+      fit = fit.adaboost
+    } else('Unknown model type!')
+    
+    probs = predict(fit, loan.dat[test.indx,], type="prob")
+    
+    R = roc(loan.dat$loan_status_bin[test.indx], probs$Good)
+    
+    plot.roc(R, add=(m>1), col=m, lwd=2, main="ROC curves")
+    
+    legend("bottomright", legend=models, col=1:n_models, lwd=2)
 
+    AUC[m] = R$auc
+}
+AUC
+```
 
+The AUC values for all three models are similar. However, elastic net model \(\alpha=0.05\) and \(\lambda=0.0001220703\) had the largest AUC. Therefore, for our final prediction model, decided to use the elastic net model with \(\alpha=0.05\) and \(\lambda=0.0001220703\) and retrained the model with all data.
+```{r}
+x = model.matrix(loan_status_bin ~ ., loan.dat)[,-1]
+y = loan.dat$loan_status_bin
+
+final_mod = glmnet(x=x, y=y, family = 'binomial', alpha = 0.05, 
+                   lambda = 0.0001220703)
+#setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
+#save(final_mod, file = "./final_model.RData")
+```
+
+## Results
+
+So our final model is an elastic net model (\(\alpha=0.05\) and \(\lambda=0.0001220703\)) with the following regression coefficients:
+```{r}
+coef(final_mod)
+```
 
 
