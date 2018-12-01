@@ -1,0 +1,12 @@
+name: predictiontool
+title: predictiontool
+username:
+account: laramaleyeff
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 599340
+bundleId: 1733108
+url: https://laramaleyeff.shinyapps.io/predictiontool/
+when: 1543690903.39945
+asMultiple: FALSE
+asStatic: FALSE

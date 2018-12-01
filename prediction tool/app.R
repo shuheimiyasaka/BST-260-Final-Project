@@ -9,7 +9,7 @@ loans <- d
 
 ui = fluidPage(
   # this is an input object   
-  titlePanel("Loan Default Prediction Model"),
+  titlePanel("Loan Default Prediction Tool"),
   sidebarLayout(
               position = "left",
                 sidebarPanel(

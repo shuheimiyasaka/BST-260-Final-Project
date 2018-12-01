@@ -1,0 +1,12 @@
+name: project
+title: project
+username:
+account: laramaleyeff
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 599346
+bundleId: 1733118
+url: https://laramaleyeff.shinyapps.io/project/
+when: 1543691356.08605
+asMultiple: FALSE
+asStatic: FALSE
