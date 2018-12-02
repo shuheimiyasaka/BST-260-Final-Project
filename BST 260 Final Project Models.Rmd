@@ -417,7 +417,24 @@ final_mod = glmnet(x=x, y=y, family = 'binomial', alpha = 0.05,
 
 Here is our final elastic net model (\(\alpha=0.05\) and \(\lambda=0.0001220703\)) with the following regression coefficients:
 ```{r}
+#setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
+#load("final_model.RData")
 coef(final_mod)
 ```
 
+## Test Prediction
+```{r}
+toy.loan.dat<-loan.dat[1:5,]
+toy.loan.dat$loan_status_bin = "Good"
+toy.loan.dat$annual_inc[1] = 100000
+toy.loan.dat$annual_inc[2] = 300000
+toy.loan.dat$annual_inc[3] = 0
+toy.loan.dat$loan_amnt[4] = 300000
+toy.loan.dat$loan_amnt[5] = 10000000
+x_test = model.matrix(loan_status_bin ~ ., toy.loan.dat)[,-1]
 
+pred.class = predict(final_mod, newx=x_test, type="class")
+pred.class
+pred.prob = predict(final_mod, newx=x_test, type="response")
+pred.prob
+```
