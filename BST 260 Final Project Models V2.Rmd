@@ -311,16 +311,17 @@ Among the three options, we picked our final model based on the best test perfor
 
 Before training our prediction model, we standardized our continuous covariates:
 ```{r}
-loan.dat.stdized <- loan.dat
+loan.dat.original <- loan.dat
 
-meta_loans <- funModeling::df_status(loan.dat.stdized, print_results = FALSE)
+meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
 numeric_cols <- meta_loans$variable[meta_loans$type == 'numeric']
 
 for (col_name in numeric_cols){
-  loan.dat.stdized[, col_name] =
-    (loan.dat.stdized[, col_name] - mean(loan.dat.stdized[, col_name]))/sd(loan.dat.stdized[, col_name])
+  loan.dat[, col_name] =
+    (loan.dat[, col_name] - mean(loan.dat[, col_name]))/sd(loan.dat[, col_name])
 }
 
+summary(loan.dat$loan_status_bin)
 ```
 
 ```{r}
