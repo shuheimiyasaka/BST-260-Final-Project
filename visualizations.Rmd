@@ -201,20 +201,6 @@ dat %>%
   ggtitle("Distributions of Loan Amount ($) by LendingClub Loan Grade")
 ```
 
-### Amount requested over time
-```{r}
-dat %>%
-  group_by(year,grade) %>%
-  summarize(avg.req.amnt =  mean(status_dum, na.rm = TRUE)) %>%
-  ggplot(aes(year,avg.req.amnt,color = grade)) +
-  geom_point() +
-  geom_smooth(se = F) +
-  scale_y_continuous(name = "Average Request Amount", breaks = seq(0,0.1,0.02),limits = c(0,0.1)) +
-  scale_x_continuous(name = "Year") +
-  ggtitle("Average Loan Request Size over Time") +
-  scale_color_brewer(palette = "Blues", name = "LendingClub Loan Grade") +
-  theme_dark()
-```
 
 ### Amount funded vs. income
 ```{r}
