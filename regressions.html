@@ -350,7 +350,7 @@ dat &lt;- dat[, varlist]
 #filter out issued, regroup loan_status
 dat &lt;- dat %&gt;%
   filter(!loan_status == &quot;Issued&quot;) %&gt;%
-  mutate(loan_status_bin = case_when(loan_status %in% c('Fully Paid', 'Current', 'Does not meet the credit policy. Status:Fully Paid') ~ &quot;Good&quot;, loan_status %in% c(&quot;Default&quot;,&quot;Charged off&quot;,&quot;Does not meet the credit policy. Status:Fully Paid&quot;,&quot;Grade Period&quot;,&quot;Late (31-120 days)&quot;,&quot;Late (16-30 days)&quot;) ~ &quot;Bad&quot;))
+  mutate(loan_status_bin = case_when(loan_status %in% c('Fully Paid', 'Current') ~ &quot;Good&quot;, loan_status %in% c(&quot;Default&quot;,&quot;Charged off&quot;,&quot;Late (31-120 days)&quot;,&quot;Late (16-30 days)&quot;) ~ &quot;Bad&quot;))
 
 #replacing NAs with the mean value 
 #for (j in 1:ncol(dat)){
@@ -396,10 +396,10 @@ dat &lt;- dat %&gt;%
 ## 26 perc_funded_amnt_inv     233    0.03     0 0.00     0     0   numeric
 ## 27                 term       0    0.00     0 0.00     0     0 character
 ## 28                 year       0    0.00     0 0.00     0     0   numeric
-## 29      loan_status_bin       0    0.00 52262 5.95     0     0 character
+## 29      loan_status_bin       0    0.00 54250 6.17     0     0 character
 ## 30         emp_length_2       0    0.00 44194 5.03     0     0   numeric
 ## 31              grade_2       0    0.00     0 0.00     0     0   integer
-## 32           status_dum  811490   92.33 52262 5.95     0     0   numeric
+## 32           status_dum  809502   92.10 54250 6.17     0     0   numeric
 ## 33             term_dum       0    0.00     0 0.00     0     0   numeric
 ##    unique
 ## 1       9
@@ -452,8 +452,9 @@ dat &lt;- dat %&gt;%
 <li>Negative assocaition with default rate: emp_length_2, annual_inc, revol_bal, total_acc, tot_coll_amt</li>
 <li>Many effects are very small. We can probably focus on int_rate, grade, emp_length and inq_last_6mths</li>
 <li><p>If grade is the predictor of interest, emp_length is a confounder.</p></li>
-<li>In fit3, the OR of grade is 1.53 (but this result is rather obvious)</li>
-<li><p>Maybe we can also run regression to see factors associated with high grades? (e.g. seems like employment length increasing grade which is a little counterintuitive)</p></li>
+<li>The OR is 1.55, which doesn’t change much after including different covariates</li>
+<li>inquiris in last 6 months and dti are significant predictors, but the effect size is small</li>
+<li><p>ORs for employment length and annual income are less than 1, which is counterintuitive</p></li>
 </ul>
 <pre class="r"><code>glm_fun &lt;- function(x) {
   fit &lt;- glm(status_dum ~ x, data = dat_sub, family = &quot;binomial&quot;)
@@ -481,143 +482,69 @@ simple_result &lt;- lapply(dat_sub[,2:15],function(x) glm_fun(x))
 
 sapply(simple_result[1:12], function(x) exp(x[2])) </code></pre>
 <pre><code>##    funded_amnt       int_rate        grade_2   emp_length_2     annual_inc 
-##      1.0000113      1.1516046      1.5518028      0.9853379      0.9999974 
+##      1.0000111      1.1514923      1.5557315      0.9849542      0.9999974 
 ##            dti inq_last_6mths       open_acc      revol_bal     revol_util 
-##      1.0039744      1.1703433      1.0061869      0.9999955      1.0063738 
+##      1.0038693      1.1943882      1.0060687      0.9999955      1.0063686 
 ##      total_acc   tot_coll_amt 
-##      0.9993861      0.9999998</code></pre>
+##      0.9993413      0.9999998</code></pre>
 <pre class="r"><code>#OR and CI for int_rate, grade, emp_length and inq_last_6mths
 glm_CI(dat_sub$int_rate)</code></pre>
-<pre><code>##                      OR       2.5 %      97.5 %
-## (Intercept) 0.002430689 0.002296865 0.002571763
-## x           1.151604559 1.147681771 1.155539389</code></pre>
+<pre><code>##                     OR       2.5 %     97.5 %
+## (Intercept) 0.00244052 0.002306238 0.00258207
+## x           1.15149226 1.147572562 1.15542399</code></pre>
 <pre class="r"><code>glm_CI(dat_sub$grade_2)</code></pre>
 <pre><code>##                      OR       2.5 %      97.5 %
-## (Intercept) 0.004689559 0.004493374 0.004893345
-## x           1.551802841 1.534694250 1.569089688</code></pre>
+## (Intercept) 0.004666854 0.004471399 0.004869891
+## x           1.555731528 1.538556101 1.573086470</code></pre>
 <pre class="r"><code>glm_CI(dat_sub$emp_length_2)</code></pre>
 <pre><code>##                     OR      2.5 %     97.5 %
-## (Intercept) 0.02017889 0.01953602 0.02083815
-## x           0.98533788 0.98074881 0.98995064</code></pre>
+## (Intercept) 0.02027876 0.01963264 0.02094136
+## x           0.98495420 0.98036633 0.98956576</code></pre>
 <pre class="r"><code>glm_CI(dat_sub$inq_last_6mths)</code></pre>
-<pre><code>##                    OR      2.5 %     97.5 %
-## (Intercept) 0.0165978 0.01627034 0.01693014
-## x           1.1703433 1.15414033 1.18663385</code></pre>
+<pre><code>##                     OR      2.5 %     97.5 %
+## (Intercept) 0.01639231 0.01606222 0.01672735
+## x           1.19438819 1.17695251 1.21194713</code></pre>
 <pre class="r"><code>#a few multivariate logistic regression 
-fit1 &lt;- glm(status_dum ~ grade_2 + emp_length_2, data=dat, family = &quot;binomial&quot;)
-summary(fit1)</code></pre>
-<pre><code>## 
-## Call:
-## glm(formula = status_dum ~ grade_2 + emp_length_2, family = &quot;binomial&quot;, 
-##     data = dat)
-## 
-## Deviance Residuals: 
-##     Min       1Q   Median       3Q      Max  
-## -0.4582  -0.1926  -0.1793  -0.1438   3.1679  
-## 
-## Coefficients:
-##               Estimate Std. Error z value Pr(&gt;|z|)    
-## (Intercept)  -5.294501   0.026464 -200.06  &lt; 2e-16 ***
-## grade_2       0.444187   0.005823   76.29  &lt; 2e-16 ***
-## emp_length_2 -0.016082   0.002393   -6.72 1.82e-11 ***
-## ---
-## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-## 
-## (Dispersion parameter for binomial family taken to be 1)
-## 
-##     Null deviance: 142383  on 785240  degrees of freedom
-## Residual deviance: 136821  on 785238  degrees of freedom
-##   (93678 observations deleted due to missingness)
-## AIC: 136827
-## 
-## Number of Fisher Scoring iterations: 7</code></pre>
+fit &lt;- glm(status_dum ~ grade_2, data=dat, family = &quot;binomial&quot;)
+exp(cbind(OR = coef(fit), confint(fit)))</code></pre>
+<pre><code>##                      OR       2.5 %      97.5 %
+## (Intercept) 0.004666854 0.004471399 0.004869891
+## grade_2     1.555731528 1.538556101 1.573086470</code></pre>
+<pre class="r"><code>fit1 &lt;- glm(status_dum ~ grade_2 + emp_length_2, data=dat, family = &quot;binomial&quot;)
+exp(cbind(OR = coef(fit1), confint(fit1)))</code></pre>
+<pre><code>##                       OR       2.5 %      97.5 %
+## (Intercept)  0.005013334 0.004759363 0.005279621
+## grade_2      1.563536969 1.545762273 1.581503432
+## emp_length_2 0.983348059 0.978745828 0.987974104</code></pre>
 <pre class="r"><code>fit2 &lt;- glm(status_dum ~ grade_2 + emp_length_2 + inq_last_6mths, data=dat, family = &quot;binomial&quot;)
-summary(fit2)</code></pre>
-<pre><code>## 
-## Call:
-## glm(formula = status_dum ~ grade_2 + emp_length_2 + inq_last_6mths, 
-##     family = &quot;binomial&quot;, data = dat)
-## 
-## Deviance Residuals: 
-##     Min       1Q   Median       3Q      Max  
-## -0.5940  -0.2011  -0.1768  -0.1422   3.1726  
-## 
-## Coefficients:
-##                 Estimate Std. Error  z value Pr(&gt;|z|)    
-## (Intercept)    -5.304611   0.026548 -199.809  &lt; 2e-16 ***
-## grade_2         0.437788   0.005967   73.365  &lt; 2e-16 ***
-## emp_length_2   -0.015943   0.002394   -6.660 2.74e-11 ***
-## inq_last_6mths  0.038848   0.007775    4.996 5.84e-07 ***
-## ---
-## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-## 
-## (Dispersion parameter for binomial family taken to be 1)
-## 
-##     Null deviance: 142382  on 785214  degrees of freedom
-## Residual deviance: 136796  on 785211  degrees of freedom
-##   (93704 observations deleted due to missingness)
-## AIC: 136804
-## 
-## Number of Fisher Scoring iterations: 7</code></pre>
+exp(cbind(OR = coef(fit2), confint(fit2)))</code></pre>
+<pre><code>##                         OR       2.5 %      97.5 %
+## (Intercept)    0.004939413 0.004688284 0.005202778
+## grade_2        1.550116059 1.532063725 1.568367319
+## emp_length_2   0.983430565 0.978827067 0.988057888
+## inq_last_6mths 1.056533417 1.039898039 1.073311977</code></pre>
 <pre class="r"><code>fit3 &lt;- glm(status_dum ~ grade_2 + emp_length_2 + inq_last_6mths + dti, data=dat, family = &quot;binomial&quot;)
-summary(fit3)</code></pre>
-<pre><code>## 
-## Call:
-## glm(formula = status_dum ~ grade_2 + emp_length_2 + inq_last_6mths + 
-##     dti, family = &quot;binomial&quot;, data = dat)
-## 
-## Deviance Residuals: 
-##     Min       1Q   Median       3Q      Max  
-## -1.6158  -0.2077  -0.1696  -0.1401   3.2420  
-## 
-## Coefficients:
-##                  Estimate Std. Error  z value Pr(&gt;|z|)    
-## (Intercept)    -5.5044674  0.0311378 -176.778  &lt; 2e-16 ***
-## grade_2         0.4264453  0.0060628   70.338  &lt; 2e-16 ***
-## emp_length_2   -0.0172346  0.0023959   -7.193 6.33e-13 ***
-## inq_last_6mths  0.0455435  0.0077878    5.848 4.97e-09 ***
-## dti             0.0126277  0.0009955   12.685  &lt; 2e-16 ***
-## ---
-## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-## 
-## (Dispersion parameter for binomial family taken to be 1)
-## 
-##     Null deviance: 142382  on 785214  degrees of freedom
-## Residual deviance: 136636  on 785210  degrees of freedom
-##   (93704 observations deleted due to missingness)
-## AIC: 136646
-## 
-## Number of Fisher Scoring iterations: 7</code></pre>
+exp(cbind(OR = coef(fit3), confint(fit3)))</code></pre>
+<pre><code>##                         OR       2.5 %      97.5 %
+## (Intercept)    0.004055999 0.003815238 0.004310776
+## grade_2        1.532927576 1.514791681 1.551262924
+## emp_length_2   0.982216611 0.977615024 0.986842016
+## inq_last_6mths 1.063198543 1.046432348 1.080110133
+## dti            1.012519233 1.010547931 1.014498409</code></pre>
 <pre class="r"><code>#categorize annual income 
 dat &lt;- dat %&gt;%
-  mutate(annual_inc_cat = case_when(annual_inc &lt; 25000 ~ 1, 
-                                    annual_inc &gt;= 25000 &amp; annual_inc &lt;=49999 ~ 2,
-                                    annual_inc &gt;=50000 &amp; annual_inc &lt;= 99999 ~3,
-                                    annual_inc &gt;= 100000 &amp; annual_inc &lt;= 199999 ~4,
-                                    annual_inc &gt;= 200000 ~5))
-
-fit4 &lt;- lm(grade_2 ~ annual_inc_cat + emp_length_2, data=dat)
-summary(fit4)</code></pre>
-<pre><code>## 
-## Call:
-## lm(formula = grade_2 ~ annual_inc_cat + emp_length_2, data = dat)
-## 
-## Residuals:
-##     Min      1Q  Median      3Q     Max 
-## -2.1325 -0.8100  0.0594  1.0410  4.5677 
-## 
-## Coefficients:
-##                  Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)     3.2324423  0.0058328  554.19   &lt;2e-16 ***
-## annual_inc_cat -0.1612556  0.0018418  -87.55   &lt;2e-16 ***
-## emp_length_2    0.0061332  0.0004081   15.03   &lt;2e-16 ***
-## ---
-## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-## 
-## Residual standard error: 1.309 on 834715 degrees of freedom
-##   (44201 observations deleted due to missingness)
-## Multiple R-squared:  0.009122,   Adjusted R-squared:  0.00912 
-## F-statistic:  3842 on 2 and 834715 DF,  p-value: &lt; 2.2e-16</code></pre>
+  mutate(annual_inc_cat = ntile(annual_inc, 5))
+           
+fit4 &lt;- glm(status_dum ~ grade_2 + emp_length_2 + inq_last_6mths + dti + annual_inc_cat, data=dat, family = &quot;binomial&quot;)
+exp(cbind(OR = coef(fit4), confint(fit4)))</code></pre>
+<pre><code>## Waiting for profiling to be done...</code></pre>
+<pre><code>##                         OR       2.5 %      97.5 %
+## (Intercept)    0.004618095 0.004292104 0.004967424
+## grade_2        1.530902555 1.512744992 1.549259503
+## emp_length_2   0.984492629 0.979822648 0.989187329
+## inq_last_6mths 1.067712052 1.050813214 1.084759880
+## dti            1.011150927 1.009141890 1.013166778
+## annual_inc_cat 0.961336052 0.949520969 0.973293866</code></pre>
 </div>
 
 

@@ -46,7 +46,7 @@ dat <- dat[, varlist]
 #filter out issued, regroup loan_status
 dat <- dat %>%
   filter(!loan_status == "Issued") %>%
-  mutate(loan_status_bin = case_when(loan_status %in% c('Fully Paid', 'Current', 'Does not meet the credit policy. Status:Fully Paid') ~ "Good", loan_status %in% c("Default","Charged off","Does not meet the credit policy. Status:Fully Paid","Grade Period","Late (31-120 days)","Late (16-30 days)") ~ "Bad"))
+  mutate(loan_status_bin = case_when(loan_status %in% c('Fully Paid', 'Current') ~ "Good", loan_status %in% c("Default","Charged off","Late (31-120 days)","Late (16-30 days)") ~ "Bad"))
 
 #replacing NAs with the mean value 
 #for (j in 1:ncol(dat)){
@@ -88,9 +88,9 @@ I only did regression on continuous variables for now:
 * Many effects are very small. We can probably focus on int_rate, grade, emp_length and inq_last_6mths
 * If grade is the predictor of interest, emp_length is a confounder. 
 
-* In fit3, the OR of grade is 1.53 (but this result is rather obvious)
-* Maybe we can also run regression to see factors associated with high grades? (e.g. seems like employment length increasing grade which is a little counterintuitive)
-
+* The OR is 1.55, which doesn't change much after including different covariates 
+* inquiris in last 6 months and dti are significant predictors, but the effect size is small 
+* ORs for employment length and annual income are less than 1, which is counterintuitive 
 
 ```{r warning=FALSE, message=FALSE}
 glm_fun <- function(x) {
@@ -127,28 +127,27 @@ glm_CI(dat_sub$inq_last_6mths)
 
 
 #a few multivariate logistic regression 
+fit <- glm(status_dum ~ grade_2, data=dat, family = "binomial")
+exp(cbind(OR = coef(fit), confint(fit)))
+
 fit1 <- glm(status_dum ~ grade_2 + emp_length_2, data=dat, family = "binomial")
-summary(fit1)
+exp(cbind(OR = coef(fit1), confint(fit1)))
 
 fit2 <- glm(status_dum ~ grade_2 + emp_length_2 + inq_last_6mths, data=dat, family = "binomial")
-summary(fit2)
+exp(cbind(OR = coef(fit2), confint(fit2)))
 
 fit3 <- glm(status_dum ~ grade_2 + emp_length_2 + inq_last_6mths + dti, data=dat, family = "binomial")
-summary(fit3)
+exp(cbind(OR = coef(fit3), confint(fit3)))
 ```
 
 
 ```{r}
 #categorize annual income 
 dat <- dat %>%
-  mutate(annual_inc_cat = case_when(annual_inc < 25000 ~ 1, 
-                                    annual_inc >= 25000 & annual_inc <=49999 ~ 2,
-                                    annual_inc >=50000 & annual_inc <= 99999 ~3,
-                                    annual_inc >= 100000 & annual_inc <= 199999 ~4,
-                                    annual_inc >= 200000 ~5))
-
-fit4 <- lm(grade_2 ~ annual_inc_cat + emp_length_2, data=dat)
-summary(fit4)
+  mutate(annual_inc_cat = ntile(annual_inc, 5))
+           
+fit4 <- glm(status_dum ~ grade_2 + emp_length_2 + inq_last_6mths + dti + annual_inc_cat, data=dat, family = "binomial")
+exp(cbind(OR = coef(fit4), confint(fit4)))
 ```
 
 
