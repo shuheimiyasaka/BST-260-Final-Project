@@ -8,6 +8,9 @@ output:
 ```{r, message=FALSE}
 rm(list = ls())
 library(tidyverse)
+library(xgboost)
+library(C50)
+library(e1071)
 library(funModeling)
 library(caret)
 library(VIM)
@@ -17,7 +20,6 @@ library(plotly)
 library(pROC)
 library(lubridate)
 library(glmnet)
-library(plotly)
 set.seed(1)
 ```
 
@@ -121,27 +123,31 @@ In our prediction model, we decided to predict loan status. We dichotomized loan
 **Good**  
 1. Fully Paid  
 2. Current  
-3. Does not meet the credit policy. Status:Fully Paid  
 
 **Bad**  
 1. Default  
 2. Charged Off  
 3. Late (16-30 days)   
 4. Late (31-120 days)  
-5. In Grace Period  
-6. Does not meet the credit policy. Status:Charged Off  
 
 Since we are predicting loan status using our model, we decided to drop records with `loan_status` with values `Issued`:
 ```{r}
 query <- loan.dat$loan_status != 'Issued'
 loan.dat <- loan.dat[query, ]
 
-loan.dat$loan_status_bin <- "Bad"
-query = loan.dat$loan_status == 'Fully Paid' | loan.dat$loan_status == 'Current' |
-  loan.dat$loan_status == 'Does not meet the credit policy. Status:Fully Paid'
+loan.dat$loan_status_bin <- NA
+query = loan.dat$loan_status == 'Fully Paid' | loan.dat$loan_status == 'Current'
 loan.dat$loan_status_bin[query] = 'Good'
 
+query = loan.dat$loan_status == 'Charged Off' | loan.dat$loan_status == 'Default' |
+  loan.dat$loan_status == 'Late (16-30 days)' | loan.dat$loan_status == 'Late (31-120 days)'
+loan.dat$loan_status_bin[query] = 'Bad'
+
+query <- !is.na(loan.dat$loan_status_bin)
+loan.dat <- loan.dat[query, ]
+
 loan.dat$loan_status_bin = as.factor(loan.dat$loan_status_bin)
+summary(loan.dat$loan_status_bin)
 ```
 
 We also converted `funded_amnt_inv` to be percent funded amount by investors `perc_funded_amnt_inv` and only use the year from issue date (`issue_d`):
@@ -171,12 +177,60 @@ loan.dat <- loan.dat %>%
   mutate(tot_coll_amt_gt0 = as.factor(tot_coll_amt > 0.))
 ```
 
+We recoded the `grade` variable to be ordinal:
+```{r}
+loan.dat$grade_ordinal <- NA
+loan.dat <- loan.dat %>% 
+  mutate(grade = as.character(grade))
+grades <- c('A', 'B', 'C', 'D', 'E', 'F', 'G')
+
+counter = 1
+for (grade in grades){
+  
+  query <- loan.dat$grade == grade
+  if (sum(query) > 0){
+    loan.dat$grade_ordinal[query] = as.numeric(counter)
+  } 
+  counter = counter + 1
+}
+
+sum(is.na(loan.dat$grade_ordinal))
+```
+
+We also recoded the `emp_length` variable to be ordinal (and removed records with no employment length information):
+```{r}
+loan.dat$emp_length_ordinal <- NA
+loan.dat <- loan.dat %>% 
+  mutate(emp_length = as.character(emp_length))
+
+loan.dat <- loan.dat %>% filter(!(emp_length == 'n/a'))
+
+emp_lengths <- c('< 1 year', '1 year',
+                 '2 years', '3 years',
+                 '4 years', '5 years',
+                 '6 years', '7 years',
+                 '8 years', '9 years',
+                 '10+ years')
+
+counter = 1
+for (emp_length in emp_lengths){
+  
+  query <- loan.dat$emp_length == emp_length
+  if (sum(query) > 0){
+    loan.dat$emp_length_ordinal[query] = as.numeric(counter)
+  } 
+  counter = counter + 1
+}
+
+sum(is.na(loan.dat$emp_length_ordinal))
+```
+
 Based on examining the uni-variate plots and the correlation plot, we decided to keep the following 27 covariates:  
 ### we can probably add a more detailed reason for dropping certain columns as outline in google docs
 ```{r}
 predictors <- c('loan_amnt', 'funded_amnt',
-                'int_rate', 'grade',
-                'emp_length', 'home_ownership',
+                'grade_ordinal',
+                'emp_length_ordinal', 'home_ownership',
                 'annual_inc', 'verification_status',
                 'purpose',
                 'addr_state', 'dti',
@@ -187,7 +241,7 @@ predictors <- c('loan_amnt', 'funded_amnt',
                 'application_type', 'acc_now_delinq',
                 'tot_coll_amt_gt0', 'tot_cur_bal',
                 'total_rev_hi_lim', 'perc_funded_amnt_inv',
-                'term', 'year')
+                'term')
 predictors
 ```
 
@@ -255,21 +309,27 @@ In building our prediction model, we considered three different models:
 2. Lasso  
 3. Elastic Net  
 
-Among the three options, we picked our final model based on the best test performance (i.e., largest AUC). We kept about a fifth of a data (200,000 records) for testing and used the rest for training our models. We trained our candidate models using 10-fold cross-validation (on the training set) to obtain the optimal tuning parameters and finally tested their performance on the test data set. 
+Among the three options, we picked our final model based on the best test performance. We were concerned by the large imbalance in classes in our data set. We only had 7.4% of "Bad" laon status. Therefore, we decided to evalute our model based on the AUC performance because this metric is less affected by the imbalance in the classes. We kept about a fifth of a data (200,000 records) for testing and used the rest for training our models. We trained our candidate models using 10-fold cross-validation (on the training set) to obtain the optimal tuning parameters and finally tested their performance on the test data set. 
 
-```{r, eval=FALSE}
+```{r}
+setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
+load('loan.dat.Rdata')
+
+summary(loan.dat$loan_status_bin)
+56958/769037 # only 7.4% of bad status
+
 # This chunk takes a very very long time to run!!!
 # I ran this overnight on my laptop and 
 # saved the results
 # That's why eval is set to FALSE
 
-setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
-load('loan.dat.Rdata')
-
 # keep a fifth of the data set to assess test performance
 set.seed(1)
 test.indx <- sample(1:dim(loan.dat)[1], 200000, replace = FALSE)
 train.indx <- setdiff(1:dim(loan.dat)[1], test.indx)
+
+summary(loan.dat$loan_status_bin[test.indx])
+summary(loan.dat$loan_status_bin[train.indx])
 
 # this is to debug the code
 # small.data.indx <- sample(1:dim(loan.dat)[1], 10000, replace = FALSE)
@@ -277,9 +337,11 @@ train.indx <- setdiff(1:dim(loan.dat)[1], test.indx)
 # test.indx <- sample(1:dim(loan.dat)[1], 500, replace = FALSE)
 # train.indx <- setdiff(1:dim(loan.dat)[1], test.indx)
 
-train.control = trainControl(method="repeatedcv", number=10, repeats=1, 
+train.control = trainControl(method="repeatedcv", number=5, repeats=1, 
                     classProbs=T, summaryFunction=twoClassSummary)
 #models = c("ridge", "lasso", "enet", "adaboost")
+models = c("ridge", "lasso", "enet", "xgbTree", "C5.0Cost", "svmLinearWeights")
+models = c("xgbTree", "C5.0Cost", "svmLinearWeights")
 models = c("ridge", "lasso", "enet")
 n_models = length(models)
 
@@ -342,6 +404,30 @@ for (m in 1:n_models) {
   
       fit.adaboost <- fit
       
+    } else if (models[m] == 'xgbTree'){
+
+      fit = train(loan_status_bin ~., 
+            data=loan.dat[train.indx, ], 
+            method=models[m], metric="ROC", trControl=train.control)
+  
+      fit.xgb <- fit
+      
+    } else if (models[m] == 'C5.0Cost'){
+
+      fit = train(loan_status_bin ~., 
+            data=loan.dat[train.indx, ], 
+            method=models[m], metric="ROC", trControl=train.control)
+  
+      fit.ccost <- fit
+      
+    } else if (models[m] == 'svmLinearWeights'){
+
+      fit = train(loan_status_bin ~., 
+            data=loan.dat[train.indx, ], 
+            method=models[m], metric="ROC", trControl=train.control)
+  
+      fit.svm <- fit
+      
     } else('Unknown model type!')
     
     probs = predict(fit, loan.dat[test.indx,], type="prob")
@@ -358,10 +444,12 @@ AUC
 
 setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
 save(fit.ridge, fit.lasso, fit.enet, file = "./models.RData")
-#save(fit.ridge, fit.lasso, fit.enet, fit.adaboost, file = "./models.RData")
+# save(fit.ridge, fit.lasso, fit.enet,
+#      fit.xgb, fit.ccost, fit.svm, file = "./models.RData")
+#save(fit.xgb, fit.ccost, fit.svm, file = "./models.RData")
 ```
 
-```{r, echo=FALSE}
+```{r, eval=FALSE}
 # This is so that I can work and knit my markdown in reasonable time
 setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
 load('loan.dat.Rdata')
@@ -402,20 +490,20 @@ for (m in 1:n_models) {
 AUC
 ```
 
-The AUC for all three models are similar. However, elastic net model (with \(\alpha=0.05\) and \(\lambda=0.0001220703\)) had the largest AUC. Therefore, we decided to use the elastic net model (with \(\alpha=0.05\) and \(\lambda=0.0001220703\)) as our final model and retrained the elastic net model with these parameters using all data.
+The AUC for all three models are similar. However, lasso model (with \(\alpha=1\) and \(\lambda=6.103516e-05\)) had the largest AUC. Therefore, we decided to use the elastic net model (with \(\alpha=1\) and \(\lambda=6.103516e-05\)) as our final model and retrained the elastic net model with these parameters using all data.
 ```{r}
 x = model.matrix(loan_status_bin ~ ., loan.dat)[,-1]
 y = loan.dat$loan_status_bin
 
-final_mod = glmnet(x=x, y=y, family = 'binomial', alpha = 0.05, 
-                   lambda = 0.0001220703)
-#setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
-#save(final_mod, file = "./final_model.RData")
+final_mod = glmnet(x=x, y=y, family = 'binomial', alpha = 1, 
+                   lambda = 6.103516e-05)
+setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
+save(final_mod, file = "./final_model.RData")
 ```
 
 ## Results
 
-Here is our final elastic net model (\(\alpha=0.05\) and \(\lambda=0.0001220703\)) with the following regression coefficients:
+Here is our final elastic net model (\(\alpha=1\) and \(\lambda=6.103516e-05\)) with the following regression coefficients:
 ```{r}
 #setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
 #load("final_model.RData")
@@ -423,7 +511,7 @@ coef(final_mod)
 ```
 
 ## Test Prediction
-```{r}
+```{r,eval=FALSE}
 toy.loan.dat<-loan.dat[1:5,]
 toy.loan.dat$loan_status_bin = "Good"
 toy.loan.dat$annual_inc[1] = 100000

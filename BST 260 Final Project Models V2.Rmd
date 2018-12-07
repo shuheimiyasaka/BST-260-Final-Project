@@ -322,9 +322,12 @@ for (col_name in numeric_cols){
 }
 
 summary(loan.dat$loan_status_bin)
+
+#setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
+#save(loan.dat, loan.dat.original, file = "./loan.dat.v2.RData")
 ```
 
-```{r}
+```{r, eval=FALSE}
 # This chunk takes a very very long time to run!!!
 # I ran this overnight on my laptop and 
 # saved the results
@@ -428,7 +431,7 @@ save(fit.ridge, fit.lasso, fit.enet, file = "./models.v2.RData")
 #save(fit.ridge, fit.lasso, fit.enet, fit.adaboost, file = "./models.RData")
 ```
 
-```{r, eval=FALSE}
+```{r}
 # This is so that I can work and knit my markdown in reasonable time
 setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
 load('loan.dat.v2.Rdata')
@@ -469,28 +472,28 @@ for (m in 1:n_models) {
 AUC
 ```
 
-The AUC for all three models are similar. However, elastic net model (with \(\alpha=0.05\) and \(\lambda=0.0001220703\)) had the largest AUC. Therefore, we decided to use the elastic net model (with \(\alpha=0.05\) and \(\lambda=0.0001220703\)) as our final model and retrained the elastic net model with these parameters using all data.
+The AUC for all three models are similar. However, elastic net model (with \(\alpha=0.85\) and \(\lambda=0.0002441406\)) had the largest AUC. Therefore, we decided to use the elastic net model (with \(\alpha=0.85\) and \(\lambda=0.0002441406\)) as our final model and retrained the elastic net model with these parameters using all data.
 ```{r}
 x = model.matrix(loan_status_bin ~ ., loan.dat)[,-1]
 y = loan.dat$loan_status_bin
 
-final_mod = glmnet(x=x, y=y, family = 'binomial', alpha = 0.05, 
-                   lambda = 0.0001220703)
-#setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
-#save(final_mod, file = "./final_model.RData")
+final_mod = glmnet(x=x, y=y, family = 'binomial', alpha = 0.85, 
+                   lambda = 0.0002441406)
+setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
+save(final_mod, file = "./final_model.v2.RData")
 ```
 
 ## Results
 
-Here is our final elastic net model (\(\alpha=0.05\) and \(\lambda=0.0001220703\)) with the following regression coefficients:
+Here is our final elastic net model (\(\alpha=0.85\) and \(\lambda=0.0002441406\)) with the following regression coefficients:
 ```{r}
 #setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
-#load("final_model.RData")
+#load("final_model.v.2RData")
 coef(final_mod)
 ```
 
 ## Test Prediction
-```{r}
+```{r,eval=FALSE, echo=FALSE}
 toy.loan.dat<-loan.dat[1:5,]
 toy.loan.dat$loan_status_bin = "Good"
 toy.loan.dat$annual_inc[1] = 100000
