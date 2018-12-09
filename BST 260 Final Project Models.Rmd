@@ -9,8 +9,6 @@ output:
 rm(list = ls())
 library(tidyverse)
 library(xgboost)
-library(C50)
-library(e1071)
 library(funModeling)
 library(caret)
 library(VIM)
@@ -304,14 +302,17 @@ save(loan.dat, file = "./loan.dat.RData")
 
 ## Building the Prediction Model
 
-In building our prediction model, we considered three different models:  
-1. Ridge  
-2. Lasso  
-3. Elastic Net  
+In building our prediction model, we considered four different models*:  
+1. Ridge Logistic Regression 
+2. Lasso Logistic Regression 
+3. Elastic Net Logistic Regression  
+4. Extreme Gradient Boosting Classification
 
-Among the three options, we picked our final model based on the best test performance. We were concerned by the large imbalance in classes in our data set. We only had 7.4% of "Bad" laon status. Therefore, we decided to evalute our model based on the AUC performance because this metric is less affected by the imbalance in the classes. We kept about a fifth of a data (200,000 records) for testing and used the rest for training our models. We trained our candidate models using 10-fold cross-validation (on the training set) to obtain the optimal tuning parameters and finally tested their performance on the test data set. 
+Among the four options, we picked our final model based on the best test performance. We were concerned by the large imbalance in classes in our data set. We only had 7.4% of "Bad" laon status. Therefore, we decided to evalute our model based on the AUC performance because this metric is less affected by the imbalance in the classes. We kept about a fifth of a data (200,000 records) for testing and used the rest for training our models. We trained our candidate models using 5-fold cross-validation (on the training set) to obtain the optimal tuning parameters and finally tested their performance on the test data set. 
 
-```{r}
+*Warning: Due to the large number of records and predictors, we trained our candidate models on the cluster. We believe the training took approximately 24 hours to complete. Out of the four models, extreme gradient boosting classification model took the longest to train.
+
+```{r, eval=FALSE}
 setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
 load('loan.dat.Rdata')
 
@@ -331,37 +332,11 @@ train.indx <- setdiff(1:dim(loan.dat)[1], test.indx)
 summary(loan.dat$loan_status_bin[test.indx])
 summary(loan.dat$loan_status_bin[train.indx])
 
-# this is to debug the code
-# small.data.indx <- sample(1:dim(loan.dat)[1], 10000, replace = FALSE)
-# loan.dat <- loan.dat[small.data.indx, ]
-# test.indx <- sample(1:dim(loan.dat)[1], 500, replace = FALSE)
-# train.indx <- setdiff(1:dim(loan.dat)[1], test.indx)
-
 train.control = trainControl(method="repeatedcv", number=5, repeats=1, 
                     classProbs=T, summaryFunction=twoClassSummary)
-#models = c("ridge", "lasso", "enet", "adaboost")
-models = c("ridge", "lasso", "enet", "xgbTree", "C5.0Cost", "svmLinearWeights")
-models = c("xgbTree", "C5.0Cost", "svmLinearWeights")
-models = c("ridge", "lasso", "enet")
+
+models = c("ridge", "lasso", "enet", "xgbTree")
 n_models = length(models)
-
-# test.indx2 <- sample(1:dim(loan.dat)[1], 10000, replace = FALSE)
-# fit <- glm(loan_status_bin ~., family=binomial(link='logit'),
-#            data=loan.dat[test.indx2, ])
-# summary(fit)
-
-# x = model.matrix(loan_status_bin ~ ., loan.dat)[test.indx2,-1]
-# y = loan.dat$loan_status_bin[test.indx2]
-# fit.lasso <- cv.glmnet(x=x, y=y, family="binomial", alpha=1)
-# fit.lasso
-# coef.min = coef(fit.lasso, s = "lambda.min")
-# coef.min
-# 
-# fit.enet <- cv.glmnet(x=x, y=y, family="binomial", alpha=0.5)
-# fit.enet
-# 
-# fit.ridge <- cv.glmnet(x=x, y=y, family="binomial", alpha=0)
-# fit.ridge
 
 AUC = rep(0,n_models)
 names(AUC) = models
@@ -443,23 +418,21 @@ for (m in 1:n_models) {
 AUC
 
 setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
-save(fit.ridge, fit.lasso, fit.enet, file = "./models.RData")
-# save(fit.ridge, fit.lasso, fit.enet,
-#      fit.xgb, fit.ccost, fit.svm, file = "./models.RData")
-#save(fit.xgb, fit.ccost, fit.svm, file = "./models.RData")
+save(fit.ridge, fit.lasso, fit.enet, fit.xgb, file = "./models.RData")
 ```
 
-```{r, eval=FALSE}
+```{r,echo=FALSE}
 # This is so that I can work and knit my markdown in reasonable time
 setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
 load('loan.dat.Rdata')
 load('models.Rdata')
+load('xgb.RData')
 
 set.seed(1)
 test.indx <- sample(1:dim(loan.dat)[1], 200000, replace = FALSE)
 train.indx <- setdiff(1:dim(loan.dat)[1], test.indx)
 
-models = c("ridge", "lasso", "enet")
+models = c("ridge", "lasso", "enet", "xgb")
 n_models = length(models)
 
 AUC = rep(0, n_models)
@@ -475,8 +448,11 @@ for (m in 1:n_models) {
       fit = fit.enet
     } else if (models[m] == 'adaboost'){
       fit = fit.adaboost
+    } else if (models[m] == 'xgb'){
+      fit = fit.xgb
     } else('Unknown model type!')
     
+    print(models[m])
     probs = predict(fit, loan.dat[test.indx,], type="prob")
     
     R = roc(loan.dat$loan_status_bin[test.indx], probs$Good)
@@ -490,20 +466,66 @@ for (m in 1:n_models) {
 AUC
 ```
 
-The AUC for all three models are similar. However, lasso model (with \(\alpha=1\) and \(\lambda=6.103516e-05\)) had the largest AUC. Therefore, we decided to use the elastic net model (with \(\alpha=1\) and \(\lambda=6.103516e-05\)) as our final model and retrained the elastic net model with these parameters using all data.
+The AUCs for the regularized regression methods (lasso, ridge, elastic net) were all similar. However, among the 4 method we considered, the extreme gradient boosting classification model had the largest AUC. We obtained the following tuning parameters from training our extreme gradient boosting to the training set:  
+1. `gamma` was fixed at 0  
+2. `min_child_weight` was fixed at 1  
+3. `nrounds` = 150  
+4. `max_depth` = 3  
+5. `eta` = 0.3  
+6. `colsample_bytree` = 0.8  
+7. `subsample` = 1  
+
+Therefore, we decided to use the extreme gradient boosting classification model as our final model and retrained the model using all data with the tuning paramters listed above.
 ```{r}
+# Shuhei is the best
+
 x = model.matrix(loan_status_bin ~ ., loan.dat)[,-1]
 y = loan.dat$loan_status_bin
+y.binary <- rep(0, length(y))
+query <- y == 'Good'
+if (sum(query) > 0){
+  y.binary[query] = 1
+} else stop('unexpected case!')
 
-final_mod = glmnet(x=x, y=y, family = 'binomial', alpha = 1, 
-                   lambda = 6.103516e-05)
+# final_mod = glmnet(x=x, y=y, family = 'binomial', alpha = 1, 
+#                    lambda = 6.103516e-05)
+
+final_mod <- xgboost(data = x,
+ label = y.binary,
+ gamma = 0,
+ min_child_weight = 1,
+ eta = 0.3,
+ max_depth = 3,
+ nround=150,
+ subsample = 1,
+ colsample_bytree = 0.8,
+ seed = 1,
+ eval_metric = "auc",
+ objective = "binary:logistic"
+)
+
+# final_mod <- xgboost(data = x, 
+#  label = as.numeric(as.character(y)), 
+#  gamma = 0,
+#  min_child_weight = 1,
+#  eta = 0.3,
+#  max_depth = 3, 
+#  nround=150, 
+#  subsample = 1,
+#  colsample_bytree = 0.8,
+#  seed = 1,
+#  eval_metric = "auc",
+#  objective = "multi:softmax",
+#  num_class=2
+# )
+
 setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
 save(final_mod, file = "./final_model.RData")
 ```
 
 ## Results
 
-Here is our final elastic net model (\(\alpha=1\) and \(\lambda=6.103516e-05\)) with the following regression coefficients:
+Here is our final extreme gradient boosting classification model:
 ```{r}
 #setwd('/Users/shuheimiyasaka/Google Drive/Harvard/Courses/BST 260/BST-260-Final-Project')
 #load("final_model.RData")
