@@ -1,0 +1,283 @@
+---
+title: "Visualization"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+library(tidyverse)
+library(broom)
+library(MASS)
+library(usmap)
+library(RColorBrewer)
+```
+
+### Data transformation and filtering
+
+* Following Louise's methods: this section is exactly the same as hers except added ID to variable list
+* I recoded loan status = "Bad" ~ 1, "Good" ~ 0 
+* Didn't dichotomize tot_coll_amt
+* Anlysis using complete cases (i.e., NAs excluded)
+
+```{r}
+load("/Users/carlyb/Desktop/Fall2018/BST260/loan.RData")
+
+#recode variables
+dat <- loan.dat %>%
+   mutate(perc_funded_amnt_inv = funded_amnt_inv/funded_amnt,
+         issue_d = as.character(issue_d),
+         term = as.character(term),
+         year = as.numeric(str_sub(issue_d, start = -4)))
+
+varlist <- c('loan_status', 'loan_amnt', 'funded_amnt',
+                'int_rate', 'grade',
+                'emp_length', 'home_ownership',
+                'annual_inc', 'verification_status',
+                'purpose',
+                'addr_state', 'dti',
+                'delinq_2yrs', 'inq_last_6mths',
+                'open_acc', 'pub_rec', 
+                'revol_bal', 'revol_util',
+                'total_acc', 'initial_list_status',
+                'application_type', 'acc_now_delinq',
+                'tot_coll_amt', 'tot_cur_bal',
+                'total_rev_hi_lim', 'perc_funded_amnt_inv',
+                'term', 'year','id')
+
+dat <- dat[, varlist]
+
+#filter out issued, regroup loan_status
+dat <- dat %>%
+  filter(!loan_status == "Issued") %>%
+  mutate(loan_status_bin = case_when(loan_status %in% c('Fully Paid', 'Current', 'Does not meet the credit policy. Status:Fully Paid') ~ "Good", loan_status %in% c("Default","Charged off","Does not meet the credit policy. Status:Fully Paid","Grade Period","Late (31-120 days)","Late (16-30 days)") ~ "Bad"))
+
+#replacing NAs with the mean value 
+#for (j in 1:ncol(dat)){
+#  miss = is.na(dat[,j])
+#  if (sum(miss) > 0){
+#    dat[miss, j] = mean(dat[,j], na.rm=T)}}
+
+#recode string variables to numbers: employment length and grade 
+letters <- LETTERS[1:26]
+dat <- dat %>%
+  mutate(emp_length_2 = gsub("years|year|<|\\+","", emp_length) %>% as.numeric(),
+         grade_2 = match(grade, letters),
+         status_dum = ifelse(loan_status_bin == "Good",0,1),
+         term_dum = ifelse(term == "36 months",0,1))
+
+
+
+#funModeling::df_status(dat, print_results = FALSE)
+```
+### US Map Plots
+
+* Proportion of loan = 'bad' by state
+* Loan grade by state
+
+```{r}
+#table(dat$grade)
+color_blind_friendly_cols <- c("#999999", "#E69F00", "#56B4E9", 
+                               "#009E73", "#F0E442", "#0072B2", 
+                               "#D55E00", "#CC79A7")
+
+#this plot will show the proportion of loan defaults by state
+state.dat  <- dat %>%
+  group_by(addr_state) %>%
+  summarize(state.prop.default =  mean(status_dum, na.rm = TRUE),
+            state.prop.gradeA = sum(grade == "A")/n(),
+            state.prop.gradeB = sum(grade == "B")/n(),
+            state.prop.gradeC = sum(grade == "C")/n(),
+            state.prop.gradeD = sum(grade == "D")/n(),
+            state.prop.gradeE = sum(grade == "E")/n(),
+            state.prop.gradeF = sum(grade == "F")/n(),
+            state.prop.gradeG = sum(grade == "G")/n()) %>%
+  mutate(state = addr_state)
+
+#head(state.dat)
+
+plot_usmap(data = state.dat, regions = "state", values = "state.prop.default") +
+  scale_fill_continuous(name = "") + 
+  ggtitle("Proportion of Loan Defaults by State") + 
+  theme(legend.position = "right")
+
+#this plot will show the most common loan grade for each state
+grade.state.dat <- state.dat %>%
+  group_by(addr_state) %>%
+  mutate(max.val = max(state.prop.gradeA,state.prop.gradeB,   state.prop.gradeC,state.prop.gradeD,state.prop.gradeE,state.prop.gradeF,state.prop.gradeG),
+         maxGrade = ifelse(max.val == state.prop.gradeA, "A", NA),
+         maxGrade = ifelse(max.val == state.prop.gradeB, "B", maxGrade),
+         maxGrade = ifelse(max.val == state.prop.gradeC, "C", maxGrade),
+         maxGrade = ifelse(max.val == state.prop.gradeD, "D", maxGrade),
+         maxGrade = ifelse(max.val == state.prop.gradeE, "E", maxGrade),
+         maxGrade = ifelse(max.val == state.prop.gradeF, "F", maxGrade),
+         maxGrade = ifelse(max.val == state.prop.gradeG, "G", maxGrade))
+
+plot_usmap(data = grade.state.dat, regions = "state",values = "maxGrade") +
+  scale_fill_brewer(name = "",palette = "Blues") +
+  ggtitle("Most Common Loan Grade by State") +
+  theme(legend.position = "right")
+```
+
+### Loan defaults over time
+```{r}
+dat %>%
+  group_by(year) %>%
+  summarize(prop.default =  mean(status_dum, na.rm = TRUE)) %>%
+  ggplot(aes(year,prop.default)) +
+  geom_point() +
+  geom_line() +
+  scale_y_continuous(name = "Proportion Defaulted", breaks = seq(0,0.1,0.02),limits = c(0,0.1)) +
+  scale_x_continuous(name = "Year") +
+  ggtitle("Proportion Defaulted over Time")
+
+```
+
+
+### Loan defaults over time by grade
+```{r}
+dat %>%
+  group_by(year,grade) %>%
+  summarize(prop.default =  mean(status_dum, na.rm = TRUE)) %>%
+  ggplot(aes(year,prop.default,color = grade)) +
+  geom_point() +
+  geom_smooth(se = F) +
+  scale_y_continuous(name = "Proportion Defaulted", breaks = seq(0,0.1,0.02),limits = c(0,0.1)) +
+  scale_x_continuous(name = "Year") +
+  ggtitle("Proportion Defaulted over Time") +
+  scale_color_brewer(palette = "Blues", name = "LendingClub Loan Grade") +
+  theme_dark()
+```
+
+
+### Loan defaults over time by state
+
+```{r}
+#probably don't want to use this one. sqrt transform is not great, and log transform gives tons of NAs from 0s.
+dat %>%
+  group_by(addr_state,year) %>%
+  summarize(state.prop.default =  mean(status_dum, na.rm = TRUE)) %>%
+  ggplot(aes(year,addr_state,fill = state.prop.default)) +
+  geom_tile(color = "grey50") +
+  scale_x_continuous(expand=c(0,0)) +
+  scale_fill_gradientn(colors = brewer.pal(9, "Blues"), trans = "sqrt", name='Square Root of Proportion') +
+  theme_minimal() +  theme(panel.grid = element_blank()) +
+  ggtitle("Proportion of LendingClub Loan Defaults over Time by State") + 
+  ylab("") + 
+  xlab("")
+```
+
+### Loan Amount vs. DTI
+```{r}
+#take random sample to be more readable
+#still working on this one
+set.seed(12218)
+#sumdat <- dat %>%
+    #group_by(grade) %>%
+   # summarize(grp_dti = mean(dti, na.rm = T),
+             # grp_loan_amnt = mean(loan_amnt, na.rm = T)) %>%
+    #left_join(dat, by = "grade")
+
+dat %>%
+    sample_n(10000) %>%
+    ggplot(aes(dti,loan_amnt,color = grade)) +
+    geom_point(alpha = 0.25) + 
+    geom_smooth(se = F) +
+    ylab("Loan Amount") +
+    xlab("Debt-to-Income Ratio") +
+    ggtitle("DTI vs. Loan Amount by LendingClub Loan Grade") +
+    scale_color_discrete(name = "Grade")
+    
+```
+
+### Amount funded vs. Loan Grade
+```{r}
+dat %>%
+  ggplot() + 
+  geom_boxplot(aes(y = loan_amnt, x = grade, color = grade)) +
+  scale_color_brewer(name = "LendingClub Grade",palette = "Blues") +
+  theme_dark() +
+  scale_y_continuous(name = "Loan amount") +
+  scale_x_discrete(name = "Grade") +
+  ggtitle("Distributions of Loan Amount ($) by LendingClub Loan Grade")
+```
+
+
+### Amount funded vs. income
+```{r}
+xbrk <- rep(5,50)
+xbrk <- xbrk^(order(xbrk))
+ybrk <- rep(2,50)
+ybrk <- ybrk^(order(ybrk))
+set.seed(12218)
+dat %>%
+    sample_n(10000) %>%
+    ggplot(aes(annual_inc,loan_amnt)) +
+    geom_point(alpha = 0.25) + 
+    scale_y_continuous(name = "Log Loan Amount", trans = "log",breaks = ybrk) +
+    scale_x_continuous(name = "Log Annual Income (USD)", trans = "log", breaks = xbrk) +
+    ggtitle("Income vs. Loan Amount")
+
+```
+
+
+### Distribution of Debt to Income Ratio
+```{r}
+dat %>%
+  filter(!is.na(loan_status_bin)) %>%
+  ggplot() + 
+  geom_boxplot(aes(y = dti, x = loan_status_bin,color = grade)) +
+  scale_color_brewer(name = "LendingClub Grade",palette = "Blues") +
+  theme_dark() +
+  scale_y_continuous(name = "Debt-to-Income Ratio") +
+  scale_x_discrete(name = "Grade") +
+  ggtitle("Distributions of DTI by LendingClub Loan Grade and Loan Status")
+
+#excluding 2 outliers
+dat %>%
+  filter(dti < 7500 & !is.na(loan_status_bin)) %>%
+  ggplot() + 
+  geom_boxplot(aes(y = dti, x = loan_status_bin,color = grade)) +
+  scale_color_brewer(name = "LendingClub Grade",palette = "Blues") +
+  theme_dark() +
+  scale_y_continuous(name = "Debt-to-Income Ratio") +
+  scale_x_discrete(name = "Grade") +
+  ggtitle("Distributions of DTI by LendingClub Loan Grade and Loan Status")
+
+#sqrt transform
+dat %>%
+  filter(!is.na(loan_status_bin)) %>%
+  ggplot() + 
+  geom_boxplot(aes(y = sqrt(dti), x = loan_status_bin,color = grade)) +
+  scale_color_brewer(name = "LendingClub Grade",palette = "Blues") +
+  theme_dark() +
+  scale_y_continuous(name = "Debt-to-Income Ratio") +
+  scale_x_discrete(name = "Grade") +
+  ggtitle("Distributions of DTI by LendingClub Loan Grade and Loan Status")
+
+#overall distribution
+dat %>%
+  filter(!is.na(loan_status_bin)) %>%
+  ggplot() + 
+  geom_boxplot(aes(y = sqrt(dti), x = loan_status_bin,color = loan_status_bin)) +
+  scale_color_brewer(name = "Loan Status",palette = "Blues") +
+  theme_dark() +
+  scale_y_continuous(name = "Debt-to-Income Ratio") +
+  scale_x_discrete(name = "Loan Status") +
+  ggtitle("Distributions of DTI by Loan Status")
+```
+
+
+### Distribution of Loan Amount grouped by outcome
+```{r}
+dat %>%
+  filter(!is.na(loan_status_bin)) %>%
+  ggplot() + 
+  geom_boxplot(aes(y = sqrt(loan_amnt), x = loan_status_bin,color = loan_status_bin)) +
+  scale_color_brewer(name = "Loan Status",palette = "Blues") +
+  theme_dark() +
+  scale_y_continuous(name = "Loan Amount (USD)") +
+  scale_x_discrete(name = "Loan Status") +
+  ggtitle("Distributions of Loan Amount by Loan Status")
+```
+
+

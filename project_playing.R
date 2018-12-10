@@ -1,5 +1,87 @@
 library(dplyr)
 load('/Users/laramaleyeff/Downloads/loan.Rdata')
+library(tidyverse)
+library(funModeling)
+library(caret)
+library(VIM)
+library(mice)
+library(ggcorrplot)
+library(plotly)
+library(pROC)
+library(lubridate)
+library(glmnet)
+library(plotly)
+
+meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
+
+cols.2.remove <- c('id', 'member_id', 'url', 'desc')
+missing.data.col <- meta_loans$variable[meta_loans$p_na > 10.]
+cols.2.remove <- c(cols.2.remove, missing.data.col)
+cols.2.keep <- !(colnames(loan.dat) %in% cols.2.remove)
+loan.dat <- loan.dat[, cols.2.keep]
+
+query = loan.dat$annual_inc == 0.
+query.na = is.na(query)
+
+if (sum(query.na) > 0){
+  query[query.na] = TRUE
+}
+if (sum(query) > 0){
+  loan.dat = loan.dat[!query,]
+} else stop('unexpected case')
+
+query <- loan.dat$loan_status != 'Issued'
+loan.dat <- loan.dat[query, ]
+
+loan.dat$loan_status_bin <- "Bad"
+query = loan.dat$loan_status == 'Fully Paid' | loan.dat$loan_status == 'Current' |
+  loan.dat$loan_status == 'Does not meet the credit policy. Status:Fully Paid'
+loan.dat$loan_status_bin[query] = 'Good'
+
+loan.dat$loan_status_bin = as.factor(loan.dat$loan_status_bin)
+
+
+loan.dat <- loan.dat %>%
+  mutate(perc_funded_amnt_inv = funded_amnt_inv/funded_amnt,
+         issue_d = as.character(issue_d),
+         term = as.character(term)) %>%
+  mutate(year = as.numeric(str_sub(issue_d, start = -4)))
+
+query <- loan.dat$term == ' 36 months'
+loan.dat$term[query] = 'Short'
+loan.dat$term[!query] = 'Long'
+loan.dat$term = as.factor(loan.dat$term)
+
+query.na <- is.na(loan.dat$tot_coll_amt)
+if (sum(query.na) >0){
+  loan.dat$tot_coll_amt[query.na] = 0
+}
+loan.dat <- loan.dat %>%
+  mutate(tot_coll_amt_gt0 = as.factor(tot_coll_amt > 0.))
+
+
+predictors <- c('loan_amnt', 'funded_amnt',
+                'int_rate', 'grade',
+                'emp_length', 'home_ownership',
+                'annual_inc', 'verification_status',
+                'purpose',
+                'addr_state', 'dti',
+                'delinq_2yrs', 'inq_last_6mths',
+                'open_acc', 'pub_rec', 
+                'revol_bal', 'revol_util',
+                'total_acc', 'initial_list_status',
+                'application_type', 'acc_now_delinq',
+                'tot_coll_amt_gt0', 'tot_cur_bal',
+                'total_rev_hi_lim', 'perc_funded_amnt_inv',
+                'term', 'year')
+
+loan.dat <- loan.dat[,c(predictors,'loan_status_bin')]
+model <- glm(factor(loan_status_bin)~loan_amnt, link=binomial, data=loan.dat)
+
+mean(loan.dat$year, na.rm=TRUE)
+min(loan.dat$year, na.rm=TRUE)
+max(loan.dat$year, na.rm=TRUE)
+unique(loan.dat$year, na.rm=TRUE)
 set.seed(100)
 
 library(plotly)

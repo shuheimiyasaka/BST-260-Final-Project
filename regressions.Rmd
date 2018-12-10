@@ -1,0 +1,153 @@
+---
+title: "Regression"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+library(tidyverse)
+library(broom)
+library(MASS)
+```
+
+### Data transformation and filtering
+
+* I recoded loan status = "Bad" ~ 1, "Good" ~ 0 
+* Didn't dichotomize tot_coll_amt
+* Anlysis using complete cases (i.e., NAs excluded)
+
+```{r}
+load("/Users/hyu/Documents/Fall2018/BST260/loan.RData")
+
+#recode variables
+dat <- loan.dat %>%
+   mutate(perc_funded_amnt_inv = funded_amnt_inv/funded_amnt,
+         issue_d = as.character(issue_d),
+         term = as.character(term),
+         year = as.numeric(str_sub(issue_d, start = -4)))
+
+varlist <- c('loan_status', 'loan_amnt', 'funded_amnt',
+                'int_rate', 'grade',
+                'emp_length', 'home_ownership',
+                'annual_inc', 'verification_status',
+                'purpose',
+                'addr_state', 'dti',
+                'delinq_2yrs', 'inq_last_6mths',
+                'open_acc', 'pub_rec', 
+                'revol_bal', 'revol_util',
+                'total_acc', 'initial_list_status',
+                'application_type', 'acc_now_delinq',
+                'tot_coll_amt', 'tot_cur_bal',
+                'total_rev_hi_lim', 'perc_funded_amnt_inv',
+                'term', 'year')
+
+dat <- dat[, varlist]
+
+#filter out issued, regroup loan_status
+dat <- dat %>%
+  filter(!loan_status == "Issued") %>%
+  mutate(loan_status_bin = case_when(loan_status %in% c('Fully Paid', 'Current') ~ "Good", loan_status %in% c("Default","Charged off","Late (31-120 days)","Late (16-30 days)") ~ "Bad"))
+
+#replacing NAs with the mean value 
+#for (j in 1:ncol(dat)){
+#  miss = is.na(dat[,j])
+#  if (sum(miss) > 0){
+#    dat[miss, j] = mean(dat[,j], na.rm=T)}}
+
+#recode string variables to numbers: employment length and grade 
+letters <- LETTERS[1:26]
+dat <- dat %>%
+  mutate(emp_length_2 = gsub("years|year|<|\\+","", emp_length) %>% as.numeric(),
+         grade_2 = match(grade, letters),
+         status_dum = ifelse(loan_status_bin == "Good",0,1),
+         term_dum = ifelse(term == "36 months",0,1))
+
+
+
+funModeling::df_status(dat, print_results = FALSE)
+```
+
+
+### Simple logistic regression
+
+* regress loan_status on a set of variables. I think we can just focus on a few major ones and present the simple linear regression fit 
+
+Continuous variables (15): funded_amnt, int_rate, grade, emp_length, annual_inc, dti, inq_last_6mths, open_acc, revol_bal, revol_util, total_acc,  tot_coll_amt, tot_cur_bal, total_rev_hi_lim
+
+Discrete variable (3): home_ownership, purpose, state
+* is purpose relevant?  That probably has more effect for approving a loan application? 
+* need to discuss categorization
+
+I only did regression on continuous variables for now: 
+
+* exclucded initial listing status and percentage funded by investors because those are more on the investor side 
+* excluded delinquency in the past 2 years, delinquency now and public record because the variables have more than 80% zeros 
+* Only two are not significant: total acc and tot_coll_amt
+* Positive association with default rate: funded_amnt, int_rate, grade, dti, inq_last_6mths, open_acc, revol_util
+* Negative assocaition with default rate: emp_length_2, annual_inc, revol_bal, total_acc, tot_coll_amt
+* Many effects are very small. We can probably focus on int_rate, grade, emp_length and inq_last_6mths
+* If grade is the predictor of interest, emp_length is a confounder. 
+
+* The OR is 1.55, which doesn't change much after including different covariates 
+* inquiris in last 6 months and dti are significant predictors, but the effect size is small 
+* ORs for employment length and annual income are less than 1, which is counterintuitive 
+
+```{r warning=FALSE, message=FALSE}
+glm_fun <- function(x) {
+  fit <- glm(status_dum ~ x, data = dat_sub, family = "binomial")
+  out <- coef(summary(fit))
+  return(out)
+}
+
+glm_CI <- function(x) {
+  fit <- glm(status_dum ~ x, data = dat_sub, family = "binomial")
+  out <- exp(cbind(OR = coef(fit), confint(fit)))
+  return(out)}
+
+
+varlist <- c('status_dum','funded_amnt','int_rate', 'grade_2',
+             'emp_length_2', 'annual_inc','dti',
+             'inq_last_6mths','open_acc',
+             'revol_bal','revol_util','total_acc',
+             'tot_coll_amt', 'tot_cur_bal',
+             'total_rev_hi_lim')
+
+dat_sub <- dat[, varlist]
+  
+
+simple_result <- lapply(dat_sub[,2:15],function(x) glm_fun(x))
+
+sapply(simple_result[1:12], function(x) exp(x[2])) 
+
+#OR and CI for int_rate, grade, emp_length and inq_last_6mths
+glm_CI(dat_sub$int_rate)
+glm_CI(dat_sub$grade_2)
+glm_CI(dat_sub$emp_length_2)
+glm_CI(dat_sub$inq_last_6mths)
+
+
+#a few multivariate logistic regression 
+fit <- glm(status_dum ~ grade_2, data=dat, family = "binomial")
+exp(cbind(OR = coef(fit), confint(fit)))
+
+fit1 <- glm(status_dum ~ grade_2 + emp_length_2, data=dat, family = "binomial")
+exp(cbind(OR = coef(fit1), confint(fit1)))
+
+fit2 <- glm(status_dum ~ grade_2 + emp_length_2 + inq_last_6mths, data=dat, family = "binomial")
+exp(cbind(OR = coef(fit2), confint(fit2)))
+
+fit3 <- glm(status_dum ~ grade_2 + emp_length_2 + inq_last_6mths + dti, data=dat, family = "binomial")
+exp(cbind(OR = coef(fit3), confint(fit3)))
+```
+
+
+```{r}
+#categorize annual income 
+dat <- dat %>%
+  mutate(annual_inc_cat = ntile(annual_inc, 5))
+           
+fit4 <- glm(status_dum ~ grade_2 + emp_length_2 + inq_last_6mths + dti + annual_inc_cat, data=dat, family = "binomial")
+exp(cbind(OR = coef(fit4), confint(fit4)))
+```
+
+
