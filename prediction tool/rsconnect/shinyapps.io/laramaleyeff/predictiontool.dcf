@@ -5,8 +5,8 @@ account: laramaleyeff
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 599340
-bundleId: 1733108
+bundleId: 1759371
 url: https://laramaleyeff.shinyapps.io/predictiontool/
-when: 1543690903.39945
+when: 1544649059.1622
 asMultiple: FALSE
 asStatic: FALSE
