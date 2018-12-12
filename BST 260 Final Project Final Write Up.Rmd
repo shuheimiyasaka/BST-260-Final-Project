@@ -1,0 +1,673 @@
+---
+title: "Building a Prediction Model for the LendingClub Loans Dataset"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r, message=FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+library(tidyverse)
+library(funModeling)
+library(caret)
+library(VIM)
+library(mice)
+library(ggcorrplot)
+library(plotly)
+library(pROC)
+library(lubridate)
+library(glmnet)
+library(broom)
+library(MASS)
+library(usmap)
+library(RColorBrewer)
+set.seed(1)
+set_dir <- '/Users/shuheimiyasaka/Google Drive/BST 260 Final Project/For Submission'
+```
+
+# Motivation
+As graduate students, debt is all around us. Fortunately, we are also data scientists, and data is all around us, too. 
+Most of the major milestones in life - such as graduating from college or a graduate program, or buying a house - require taking on debt. A report from Time’s Money Magazine based on the Federal Reserve’s Survey of Consumer Finances found that on average, Americans under 35 owe $67,400. For middle-aged Americans, the average is even higher, ranging from $108,300 for 55-64 year olds to $134,600 for 45-54 year olds (http://time.com/money/5233033/average-debt-every-age/).
+
+We are interested in digging deeper into how loan applications are considered, and better understanding factors which might be considered by lending agents when applying for a loan, from the applicant’s perspective. Alternatively, our analysis  could be useful from the lender’s perspective in identifying factors which predict loan defaults. 
+
+The goal for our final project was to build a prediction model using the LendingClub loans data set. We wanted to build a model that could predict a dichotomized outcome of loan status (which will be explained in more detail below) using the variables given in the data set. In this page, we will walk you through our process for building our final prediction model.
+
+# Data Exploration
+
+Our data is available  via `kaggle` at https://www.kaggle.com/wendykan/lending-club-loan-data.  This data is unique from most other financial institution’s data because of the lending method used by ‘LendingClub’. Headquartered in San Francisco, LendingClub connects borrowers applying for personal loans, auto refinancing, business loans, and elective medical procedures with investors. LendingClub reports that it is America’s largest online marketplace, and emphasizes the digital aspects of its model (https://www.lendingclub.com/). LendingClub also services the loans, and therefore maintains data on the loans’ statuses, as well as information about the loan application. 
+
+## Data Cleaning
+
+```{r}
+setwd(set_dir)
+load('./loan.Rdata')
+#loan.dat <- read.csv('loan.csv', header = TRUE)
+#save(loan.dat, file = "./loan.RData")
+```
+
+The data set has 887,379 records with 74 variables.
+```{r}
+dim(loan.dat)
+names(loan.dat)
+```
+
+```{r}
+meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
+meta_loans[order(-meta_loans$p_na),]
+```
+
+As part of data exploration, we examined with percentage of "zeros", missing records, and unique values in the data set per variable as shown above. From the table above, we notice a number of variables with significant amount of missing data.
+
+Based on examining the data set and reading the data dictionary, we decided to immediately rule out the following variables from our model: `id`, `member_id`, `url`, and `desc`.
+```{r}
+cols.2.remove <- c('id', 'member_id', 'url', 'desc')
+```
+
+We decided to exclude variables with more than 10% missing data (19 variables).
+```{r}
+missing.data.col <- meta_loans$variable[meta_loans$p_na > 10.]
+missing.data.col
+length(missing.data.col)
+cols.2.remove <- c(cols.2.remove, missing.data.col)
+```
+
+```{r}
+meta_loans[order(meta_loans$unique),]
+cols.2.remove <- c(cols.2.remove, 'policy_code')
+```
+We also decided to remove `policy_code` since it only has one unique value.
+
+At this point, we had 50 potential covariates:
+```{r}
+cols.2.keep <- !(colnames(loan.dat) %in% cols.2.remove)
+colnames(loan.dat)[cols.2.keep]
+length(colnames(loan.dat)[cols.2.keep])
+
+loan.dat <- loan.dat[, cols.2.keep]
+```
+
+We also decided to remove 6 records with missing or zero annual income since we felt this information was a requirement for obtaining a loan and a covariate that we must definitely include in our final model (and didn't feel we could impute these values properly)!
+```{r}
+query = loan.dat$annual_inc == 0.
+query.na = is.na(query)
+if (sum(query.na) > 0){
+  query[query.na] = TRUE
+}
+if (sum(query) > 0){
+  loan.dat = loan.dat[!query,]
+} else stop('unexpected case')
+```
+
+With the remaining set of records and covariates, we decided to examine the pairwise correlation of covariates:
+```{r}
+meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
+numeric_cols <- meta_loans$variable[meta_loans$type == 'numeric']
+
+cor.dat <- cor(loan.dat[,numeric_cols], loan.dat[,numeric_cols])
+plot_ly(x=colnames(cor.dat), 
+        y=rownames(cor.dat), 
+        z = cor.dat, type = "heatmap", colorscale="Greys")
+
+#ggcorrplot(cor(loan.dat[,numeric_cols]))
+#aggr(loan.dat, combined=T, cex.axis=0.6)
+```
+
+We notice from the plot above that there are a few covariates that are highly correlated (which is not unexpected).
+
+We also calculated basic summary statistics of our covariates to help us better understand the data:
+```{r}
+summary(loan.dat)
+```
+
+
+## Preliminary Analysis, Visualization, and Feature Engineering
+
+After conducting a preliminary data exploration, we got a much better sense of our dataset. Based on what we learned, we dropped further covariates and re-categorized some of the variables which we will explain in this section.
+
+In our prediction model, we decided to predict loan status. We dichotomized loan status into "Good" and "Bad" based on the following criteria:
+**Good**  
+1. Fully Paid  
+2. Current  
+
+**Bad**  
+1. Default  
+2. Charged Off  
+3. Late (16-30 days)   
+4. Late (31-120 days)  
+
+Since we are predicting loan status using our model, we decided to drop records with `loan_status` with values `Issued`:
+```{r}
+query <- loan.dat$loan_status != 'Issued'
+loan.dat <- loan.dat[query, ]
+
+loan.dat$loan_status_bin <- NA
+query = loan.dat$loan_status == 'Fully Paid' | loan.dat$loan_status == 'Current'
+loan.dat$loan_status_bin[query] = 'Good'
+
+query = loan.dat$loan_status == 'Charged Off' | loan.dat$loan_status == 'Default' |
+  loan.dat$loan_status == 'Late (16-30 days)' | loan.dat$loan_status == 'Late (31-120 days)'
+loan.dat$loan_status_bin[query] = 'Bad'
+
+query <- !is.na(loan.dat$loan_status_bin)
+loan.dat <- loan.dat[query, ]
+
+loan.dat$loan_status_bin = as.factor(loan.dat$loan_status_bin)
+summary(loan.dat$loan_status_bin)
+```
+
+We also converted `funded_amnt_inv` to be percent funded amount by investors `perc_funded_amnt_inv` and only use the year from issue date (`issue_d`):
+```{r}
+loan.dat <- loan.dat %>%
+  mutate(perc_funded_amnt_inv = funded_amnt_inv/funded_amnt,
+         issue_d = as.character(issue_d),
+         term = as.character(term)) %>%
+  mutate(year = as.numeric(str_sub(issue_d, start = -4)))
+```
+
+We reclassified a 36 month loan to "Short" and a 60 month loan to "Long".
+```{r}
+query <- loan.dat$term == ' 36 months'
+loan.dat$term[query] = 'Short'
+loan.dat$term[!query] = 'Long'
+loan.dat$term = as.factor(loan.dat$term)
+```
+
+We also dichotomized `tot_coll_amt` to 0 and greater than 0 (and replaced the missing values to zero):
+```{r}
+query.na <- is.na(loan.dat$tot_coll_amt)
+if (sum(query.na) >0){
+  loan.dat$tot_coll_amt[query.na] = 0
+}
+loan.dat <- loan.dat %>%
+  mutate(tot_coll_amt_gt0 = as.factor(tot_coll_amt > 0.))
+```
+
+We recoded the `grade` variable to be ordinal:
+```{r}
+loan.dat$grade_ordinal <- NA
+loan.dat <- loan.dat %>% 
+  mutate(grade = as.character(grade))
+grades <- c('A', 'B', 'C', 'D', 'E', 'F', 'G')
+
+counter = 1
+for (grade in grades){
+  
+  query <- loan.dat$grade == grade
+  if (sum(query) > 0){
+    loan.dat$grade_ordinal[query] = as.numeric(counter)
+  } 
+  counter = counter + 1
+}
+
+sum(is.na(loan.dat$grade_ordinal))
+```
+
+We also recoded the `emp_length` variable to be ordinal (and removed records with no employment length information):
+```{r}
+loan.dat$emp_length_ordinal <- NA
+loan.dat <- loan.dat %>% 
+  mutate(emp_length = as.character(emp_length))
+
+loan.dat <- loan.dat %>% filter(!(emp_length == 'n/a'))
+
+emp_lengths <- c('< 1 year', '1 year',
+                 '2 years', '3 years',
+                 '4 years', '5 years',
+                 '6 years', '7 years',
+                 '8 years', '9 years',
+                 '10+ years')
+
+counter = 1
+for (emp_length in emp_lengths){
+  
+  query <- loan.dat$emp_length == emp_length
+  if (sum(query) > 0){
+    loan.dat$emp_length_ordinal[query] = as.numeric(counter)
+  } 
+  counter = counter + 1
+}
+
+sum(is.na(loan.dat$emp_length_ordinal))
+```
+
+Based on examining the uni-variate plots and the correlation plot, we decided to keep the following 27 covariates:  
+### we can probably add a more detailed reason for dropping certain columns as outline in google docs
+```{r}
+predictors <- c('loan_amnt', 'funded_amnt',
+                'grade_ordinal',
+                'emp_length_ordinal', 'home_ownership',
+                'annual_inc', 'verification_status',
+                'purpose',
+                'addr_state', 'dti',
+                'delinq_2yrs', 'inq_last_6mths',
+                'open_acc', 'pub_rec', 
+                'revol_bal', 'revol_util',
+                'total_acc', 'initial_list_status',
+                'application_type', 'acc_now_delinq',
+                'tot_coll_amt_gt0', 'tot_cur_bal',
+                'total_rev_hi_lim', 'perc_funded_amnt_inv',
+                'term')
+predictors
+```
+
+```{r}
+outcome <- c('loan_status_bin')
+
+loan.dat <- loan.dat[, c(outcome, predictors)]
+```
+
+We also did a simple uni-variate analysis of the covariates using histograms and boxplots:
+```{r, message=FALSE}
+meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
+numeric_cols <- meta_loans$variable[meta_loans$type == 'numeric']
+
+for (col_name in numeric_cols){
+  plt <- loan.dat %>% ggplot(aes(loan.dat[, col_name])) +
+    geom_histogram(color = "black") + 
+    ggtitle(col_name) + labs(x=col_name) 
+  print(plt)
+}
+```
+
+```{r, message=FALSE}
+for (col_name in numeric_cols){
+  plt <- loan.dat %>% ggplot(aes(x=loan_status_bin, loan.dat[, col_name])) +
+    geom_boxplot() + 
+    ggtitle(col_name) + labs(x='Loan Status', y=col_name)
+  print(plt)
+}
+```
+
+At this point, we still had a few records with missing data. We initially tried imputing these values using the `mice` package but due to computational reasons, we decided to drop this idea.
+```{r}
+meta_loans <- funModeling::df_status(loan.dat, print_results = FALSE)
+meta_loans[order(-meta_loans$p_na),]
+
+# loan.dat = mice(loan.dat, m=1)  # let's just impute one dataset
+# loan.dat = complete(loan.dat, 1)
+```
+
+Instead, we decided to set the missing values to the mean using the rest of the data:
+```{r}
+sum(is.na(loan.dat$loan_status_bin))
+
+for (j in 1:ncol(loan.dat)){
+  miss = is.na(loan.dat[,j])
+  if (sum(miss) > 0){
+    loan.dat[miss, j] = mean(loan.dat[,j], na.rm=T)
+  }
+}
+sum(is.na(loan.dat))
+```
+
+Here is a final basic summary statistics of the remaining covariates:
+```{r, echo=FALSE}
+summary(loan.dat)
+setwd(set_dir)
+save(loan.dat, file = "./loan.dat.RData")
+```
+
+We examined a few associations that we thought would likely be meaningful visually. For example, we would want to include "State" in our model if it were likely to be meaningful in terms of loan status outcome, but with 51 levels, it would add a lot of parameters to our model if not necessary and impact our inference. 
+```{r}
+state.dat  <- loan.dat %>%
+  group_by(addr_state) %>%
+  summarise(state.prop.default =  mean(loan_status_bin == "Bad", na.rm = TRUE),
+            state.prop.gradeA = sum(grade_ordinal == 1)/n(),
+            state.prop.gradeB = sum(grade_ordinal == 2)/n(),
+            state.prop.gradeC = sum(grade_ordinal == 3)/n(),
+            state.prop.gradeD = sum(grade_ordinal == 4)/n(),
+            state.prop.gradeE = sum(grade_ordinal == 5)/n(),
+            state.prop.gradeF = sum(grade_ordinal == 6)/n(),
+            state.prop.gradeG = sum(grade_ordinal == 7)/n()) %>%
+  mutate(state = addr_state)
+
+#head(state.dat)
+
+plot_usmap(data = state.dat, regions = "state", values = "state.prop.default") +
+  scale_fill_continuous(name = "") + 
+  ggtitle("Proportion of Loan Defaults by State") + 
+  theme(legend.position = "right")
+```
+We see some variation from state to state, but did not observe regional trends which would allow us to collapse our states into a lower number of categories.
+
+We also hypothesized that Debt-to-Income Ratio (DTI) might affect loan repayment, and examined the distribution of this variable.
+
+```{r}
+loan.dat %>%
+  filter(!is.na(loan_status_bin)) %>%
+  ggplot() + 
+  geom_boxplot(aes(y = dti, x = loan_status_bin,color = grade_ordinal)) +
+  scale_color_brewer(name = "LendingClub Grade",palette = "Blues") +
+  theme_dark() +
+  scale_y_continuous(name = "Debt-to-Income Ratio") +
+  scale_x_discrete(name = "Grade") +
+  ggtitle("Distributions of DTI by LendingClub Loan Grade and Loan Status")
+
+#excluding 2 outliers
+loan.dat %>%
+  filter(dti < 7500 & !is.na(loan_status_bin)) %>%
+  ggplot() + 
+  geom_boxplot(aes(y = dti, x = loan_status_bin,color = grade)) +
+  scale_color_brewer(name = "LendingClub Grade",palette = "Blues") +
+  theme_dark() +
+  scale_y_continuous(name = "Debt-to-Income Ratio") +
+  scale_x_discrete(name = "Grade") +
+  ggtitle("Distributions of DTI by LendingClub Loan Grade and Loan Status")
+
+#sqrt transform
+loan.dat %>%
+  filter(!is.na(loan_status_bin)) %>%
+  ggplot() + 
+  geom_boxplot(aes(y = sqrt(dti), x = loan_status_bin,color = grade_ordinal)) +
+  scale_color_brewer(name = "LendingClub Grade",palette = "Blues") +
+  theme_dark() +
+  scale_y_continuous(name = "Debt-to-Income Ratio") +
+  scale_x_discrete(name = "Grade") +
+  ggtitle("Distributions of DTI by LendingClub Loan Grade and Loan Status")
+
+#overall distribution
+loan.dat %>%
+  filter(!is.na(loan_status_bin)) %>%
+  ggplot() + 
+  geom_boxplot(aes(y = sqrt(dti), x = loan_status_bin,color = loan_status_bin)) +
+  scale_color_brewer(name = "Loan Status",palette = "Blues") +
+  theme_dark() +
+  scale_y_continuous(name = "Debt-to-Income Ratio") +
+  scale_x_discrete(name = "Loan Status") +
+  ggtitle("Distributions of DTI by Loan Status")
+```
+
+## Building the Prediction Model
+
+In building our prediction model, we considered three different models*:  
+1. Ridge  
+2. Lasso  
+3. Elastic Net  
+
+Among the three options, we picked our final model based on the best test performance. We were concerned by the large imbalance in classes in our data set. We only had 7.4% of "Bad" laon status. Therefore, we decided to evalute our model based on the AUC performance because this metric is less affected by the imbalance in the classes. We kept about a fifth of a data (200,000 records) for testing and used the rest for training our models. We trained our candidate models using 5-fold cross-validation (on the training set) to obtain the optimal tuning parameters and finally tested their performance on the test data set. 
+
+*Warning: Due to the large number of records and predictors, the models took a long time to train. The training time was approximately ~ 4 hours.
+
+```{r, eval=FALSE}
+setwd(set_dir)
+load('./loan.dat.Rdata')
+start_time <- Sys.time()
+
+summary(loan.dat$loan_status_bin)
+56958/769037 # only 7.4% of bad status
+
+# This chunk takes a very very long time to run!!!
+# I ran this overnight on my laptop and 
+# saved the results
+# That's why eval is set to FALSE
+
+# keep a fifth of the data set to assess test performance
+set.seed(1)
+test.indx <- sample(1:dim(loan.dat)[1], 200000, replace = FALSE)
+train.indx <- setdiff(1:dim(loan.dat)[1], test.indx)
+
+summary(loan.dat$loan_status_bin[test.indx])
+summary(loan.dat$loan_status_bin[train.indx])
+
+train.control = trainControl(method="repeatedcv", number=5, repeats=3, 
+                    classProbs=T, summaryFunction=twoClassSummary)
+
+models = c("ridge", "lasso", "enet")
+n_models = length(models)
+
+AUC = rep(0,n_models)
+names(AUC) = models
+for (m in 1:n_models) {
+    
+    print_str <- paste("Training model: ",
+                       models[m], sep='')
+    print(print_str)
+    
+    # save our results
+    if (models[m] == 'ridge'){
+      
+      fit = train(loan_status_bin ~., 
+                  data=loan.dat[train.indx, ], 
+                  method="glmnet", metric="ROC", trControl=train.control,
+                  tuneGrid=expand.grid(alpha = 0, lambda = .5 ^ (-20:20)))  
+      
+      fit.ridge <- fit
+    } else if (models[m] == 'lasso'){
+      
+      fit = train(loan_status_bin ~., 
+                  data=loan.dat[train.indx, ], 
+                  method="glmnet", metric="ROC", trControl=train.control,
+                  tuneGrid=expand.grid(alpha = 1, lambda = .5 ^ (-20:20)))      
+
+      fit.lasso <- fit
+    } else if (models[m] == 'enet'){
+      
+      fit = train(loan_status_bin ~., 
+                  data=loan.dat[train.indx, ], 
+                  method="glmnet", metric="ROC", trControl=train.control,
+                  tuneGrid=expand.grid(alpha = seq(.05,.95,.05), lambda = .5 ^ (-20:20)))     
+
+      fit.enet <- fit
+    } else if (models[m] == 'adaboost'){
+
+      fit = train(loan_status_bin ~., 
+            data=loan.dat[train.indx, ], 
+            method=models[m], metric="ROC", trControl=train.control)
+  
+      fit.adaboost <- fit
+      
+    } else if (models[m] == 'xgbTree'){
+
+      fit = train(loan_status_bin ~., 
+            data=loan.dat[train.indx, ], 
+            method=models[m], metric="ROC", trControl=train.control)
+  
+      fit.xgb <- fit
+      
+    } else if (models[m] == 'C5.0Cost'){
+
+      fit = train(loan_status_bin ~., 
+            data=loan.dat[train.indx, ], 
+            method=models[m], metric="ROC", trControl=train.control)
+  
+      fit.ccost <- fit
+      
+    } else if (models[m] == 'svmLinearWeights'){
+
+      fit = train(loan_status_bin ~., 
+            data=loan.dat[train.indx, ], 
+            method=models[m], metric="ROC", trControl=train.control)
+  
+      fit.svm <- fit
+      
+    } else('Unknown model type!')
+    
+    probs = predict(fit, loan.dat[test.indx,], type="prob")
+    
+    R = roc(loan.dat$loan_status_bin[test.indx], probs$Good)
+    
+    plot.roc(R, add=(m>1), col=m, lwd=2, main="ROC curves")
+    
+    legend("bottomright", legend=models, col=1:n_models, lwd=2)
+
+    AUC[m] = R$auc
+}
+AUC
+
+end_time <- Sys.time()
+time <- end_time - start_time
+time
+
+setwd(set_dir)
+save(fit.ridge, fit.lasso, fit.enet, file = "./models.RData")
+```
+
+```{r, eval=TRUE, echo=FALSE}
+# This is so that I can work and knit my markdown in reasonable time
+setwd(set_dir)
+load('./loan.dat.Rdata')
+load('./models.Rdata')
+
+set.seed(1)
+test.indx <- sample(1:dim(loan.dat)[1], 200000, replace = FALSE)
+train.indx <- setdiff(1:dim(loan.dat)[1], test.indx)
+
+models = c("ridge", "lasso", "enet")
+n_models = length(models)
+
+AUC = rep(0, n_models)
+names(AUC) = models
+for (m in 1:n_models) {
+    
+    # save our results
+    if (models[m] == 'ridge'){
+      fit = fit.ridge
+    } else if (models[m] == 'lasso'){
+      fit = fit.lasso
+    } else if (models[m] == 'enet'){
+      fit = fit.enet
+    } else if (models[m] == 'adaboost'){
+      fit = fit.adaboost
+    } else('Unknown model type!')
+    
+    print(models[m])
+    probs = predict(fit, loan.dat[test.indx,], type="prob")
+    
+    R = roc(loan.dat$loan_status_bin[test.indx], probs$Good)
+    
+    plot.roc(R, add=(m>1), col=m, lwd=2, main="ROC curves")
+    
+    legend("bottomright", legend=models, col=1:n_models, lwd=2)
+
+    AUC[m] = R$auc
+}
+AUC
+```
+
+The AUC for all three models are similar. However, lasso model (with \(\alpha=1\) and \(\lambda=0.0001220703\)) had the largest AUC. Therefore, we decided to use the elastic net model (with \(\alpha=1\) and \(\lambda=0.0001220703\)) as our final model and retrained the elastic net model with these parameters using all data.
+
+```{r}
+x = model.matrix(loan_status_bin ~ ., loan.dat)[,-1]
+y = loan.dat$loan_status_bin
+
+final_mod = glmnet(x=x, y=y, family = 'binomial', alpha = 1, 
+                   lambda = 0.0001220703)
+
+
+setwd(set_dir)
+save(final_mod, file = "./final_model.RData")
+```
+
+## Results
+
+Here is our final elastic net model (\(\alpha=1\) and \(\lambda=0.0001220703\)) with the following regression coefficients:
+```{r}
+setwd(set_dir)
+#load("final_model.RData")
+coef(final_mod)
+```
+
+## Assocation 
+We also ran a series of simple logistic regressions to explore factors that are associated with defaulting a loan. We recoded loan status into a dummy variable with 1 being "Bad". The predictors are: 
+
+* Funded amount
+* Grade
+* Employment length
+* annual income
+* Debt-to-Income Ratio (DTI) 
+* The number of inquiries in past 6 months (excluding auto and mortgage inquiries)
+* The number of open account
+* Total credit revolving balance
+* Revolving line utilization rate
+* The total number of credit lines currently in the borrower's credit file
+* Total current balance of all accounts
+* Total revolving high credit/credit limit
+
+
+```{r}
+#recode loan status to a dummy variable, grade and employment length to continuous variables 
+loan.dat <- loan.dat %>%
+  mutate(status_dum = ifelse(loan_status_bin == "Good",0,1))
+
+#prepare data subset 
+varlist <- c('status_dum','funded_amnt','grade_ordinal',
+             'emp_length_ordinal', 'annual_inc','dti',
+             'inq_last_6mths','open_acc',
+             'revol_bal','revol_util','total_acc',
+             'tot_cur_bal','total_rev_hi_lim')
+
+loan.dat_sub <- loan.dat[, varlist]
+
+#run simple logistic regressions 
+
+glm_fun <- function(x) {
+  fit <- glm(status_dum ~ x, data = loan.dat_sub, family = "binomial")
+  out <- coef(summary(fit))
+  return(out)
+}
+
+simple_result <- lapply(loan.dat_sub[,2:13],function(x) glm_fun(x))
+```
+
+Here is the result for each logistic regression. Note that the coefficient in in log form.  
+
+```{r}
+simple_result_df <- matrix(nrow = 12, ncol = 4)
+colnames(simple_result_df) <- c("Estimate","SE","z value","p-value")
+rownames(simple_result_df) <- names(simple_result)
+for (i in 1:12){
+  simple_result_df[i,] <- simple_result[[i]][2,]
+}
+
+tidy(simple_result_df)
+```
+
+While all of estimates are statistically significant at 5% confidence level, the magnitude of effect is negligible for most of these variables. We present the odds ratio (OR) and 95% confidence intervals for three variables with large effect size: grade, employment length, and Inquiries in the last 6 months. 
+
+```{r}
+#this is a function of exponentiate the coefficient and get the confidence intervals of each estimate 
+glm_CI <- function(x) {
+  fit <- glm(status_dum ~ x, data = loan.dat_sub, family = "binomial")
+  out <- exp(cbind(OR = coef(fit), confint(fit)))
+  return(out)}
+```
+
+**Grade**
+
+This result suggests that for a one unit increase in grade, which represents a downgrading of one level (i.e., from A to B), the odds of defaulting a loan increases by 49%. 
+
+```{r}
+glm_CI(loan.dat_sub$grade_ordinal)
+```
+
+**Employment length**
+
+For a one-year increase in employment length (up to 10 years), the odds of defaulting a loan decreases by 2% 
+
+```{r}
+glm_CI(loan.dat_sub$emp_length_ordinal)
+```
+
+**Inquiries in the last 6 months**
+
+For a one unit increase in the number of inquiries in past 6 months (excluding auto and mortgage inquiries), the odds of defaulting a loan increases by 29%. A recent inquiry might suggest having insufficient fund to make the upcoming repayment. 
+
+```{r}
+glm_CI(loan.dat_sub$inq_last_6mths)
+```
+
+We note that grade is a function of many other factors (e.g. employment length, annual income). Therefore, we also ran a multivariate logistic regression to condition out grade assignment. 
+
+We see that after stratifying by grade, the effects of employment length and inquiries in the last 6 months on loan repayment remain statistically significant, although the odds ratio of inquiries in the last 6 months decreases discernably. This shows that in each grade stratum, the magnitude of the effect of inquiries in the last 6 months on loan default becomes smaller. 
+
+```{r}
+reg_fit <- glm(status_dum ~ grade_ordinal + emp_length_ordinal + inq_last_6mths, data=loan.dat, family = "binomial")
+exp(cbind(OR = coef(reg_fit), confint(reg_fit)))
+```
+
+
+
+
+
