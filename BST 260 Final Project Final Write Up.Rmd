@@ -233,7 +233,7 @@ sum(is.na(loan.dat$emp_length_ordinal))
 ```
 
 Based on examining the uni-variate plots and the correlation plot, we decided to keep the following 27 covariates:  
-### we can probably add a more detailed reason for dropping certain columns as outline in google docs
+
 ```{r}
 predictors <- c('loan_amnt', 'funded_amnt',
                 'grade_ordinal',
@@ -330,6 +330,7 @@ plot_usmap(data = state.dat, regions = "state", values = "state.prop.default") +
   ggtitle("Proportion of Loan Defaults by State") + 
   theme(legend.position = "right")
 ```
+
 We see some variation from state to state, but did not observe regional trends which would allow us to collapse our states into a lower number of categories.
 
 We also hypothesized that Debt-to-Income Ratio (DTI) might affect loan repayment, and examined the distribution of this variable.
@@ -386,7 +387,7 @@ In building our prediction model, we considered three different models*:
 2. Lasso  
 3. Elastic Net  
 
-Among the three options, we picked our final model based on the best test performance. We were concerned by the large imbalance in classes in our data set. We only had 7.4% of "Bad" laon status. Therefore, we decided to evalute our model based on the AUC performance because this metric is less affected by the imbalance in the classes. We kept about a fifth of a data (200,000 records) for testing and used the rest for training our models. We trained our candidate models using 5-fold cross-validation (on the training set) to obtain the optimal tuning parameters and finally tested their performance on the test data set. 
+Among the three options, we picked our final model based on the best test performance. We were concerned by the large imbalance in classes in our data set. We only had 7.4% of "Bad" loan status. Therefore, we decided to evaluate our model based on the AUC performance because this metric is less affected by the imbalance in the classes. We kept about a fifth of a data (200,000 records) for testing and used the rest for training our models. We trained our candidate models using 5-fold cross-validation (on the training set) to obtain the optimal tuning parameters and finally tested their performance on the test data set. 
 
 *Warning: Due to the large number of records and predictors, the models took a long time to train. The training time was approximately ~ 4 hours.
 
@@ -546,7 +547,7 @@ for (m in 1:n_models) {
 AUC
 ```
 
-The AUC for all three models are similar. However, lasso model (with \(\alpha=1\) and \(\lambda=0.0001220703\)) had the largest AUC. Therefore, we decided to use the elastic net model (with \(\alpha=1\) and \(\lambda=0.0001220703\)) as our final model and retrained the elastic net model with these parameters using all data.
+The AUC for all three models were similar. However, lasso model (with \(\alpha=1\) and \(\lambda=0.0001220703\)) had the largest AUC. Therefore, we decided to use the lasso model (with \(\alpha=1\) and \(\lambda=0.0001220703\)) as our final model and retrained the it using these parameters with all data.
 
 ```{r}
 x = model.matrix(loan_status_bin ~ ., loan.dat)[,-1]
@@ -562,7 +563,7 @@ save(final_mod, file = "./final_model.RData")
 
 ## Results
 
-Here is our final elastic net model (\(\alpha=1\) and \(\lambda=0.0001220703\)) with the following regression coefficients:
+Here is our final lasso model (\(\alpha=1\) and \(\lambda=0.0001220703\)) with the following regression coefficients:
 ```{r}
 setwd(set_dir)
 #load("final_model.RData")
@@ -660,7 +661,7 @@ glm_CI(loan.dat_sub$inq_last_6mths)
 
 We note that grade is a function of many other factors (e.g. employment length, annual income). Therefore, we also ran a multivariate logistic regression to condition out grade assignment. 
 
-We see that after stratifying by grade, the effects of employment length and inquiries in the last 6 months on loan repayment remain statistically significant, although the odds ratio of inquiries in the last 6 months decreases discernably. This shows that in each grade stratum, the magnitude of the effect of inquiries in the last 6 months on loan default becomes smaller. 
+We see that after stratifying by grade, the effects of employment length and inquiries in the last 6 months on loan repayment remain statistically significant, although the odds ratio of inquiries in the last 6 months decreases discernibly. This shows that in each grade stratum, the magnitude of the effect of inquiries in the last 6 months on loan default becomes smaller. 
 
 ```{r}
 reg_fit <- glm(status_dum ~ grade_ordinal + emp_length_ordinal + inq_last_6mths, data=loan.dat, family = "binomial")
