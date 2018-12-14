@@ -5,6 +5,16 @@ output:
     df_print: paged
 ---
 
+### By Carly Broadwell, Lara Maleyeff, Shuhei Miyasaka, and Louise Yu
+
+### Note to Kareem:  
+The data was too large to upload to Github, so instead we're providing you a link to our data:  
+https://drive.google.com/open?id=1U8RZsuU_aNml-WSTOBIxGy_92YEj4ebK  
+1. loan.csv ==> original data from the LendingClub  
+2. loan.RData ==> we converted the file above to .RData file since it's much faster to load and that's what the Rmarkdown actually uses  
+3. models.RData ==> we saved our training model results since training the models was very time consuming (and we've set up our rmarkdown to read these results instead of re-training)  
+3. LCDataDictionary.xlsx ==> data dictionary for this data set  
+
 ```{r, message=FALSE}
 rm(list = ls())
 knitr::opts_chunk$set(message = FALSE, warning = FALSE)
@@ -305,8 +315,8 @@ sum(is.na(loan.dat))
 Here is a final basic summary statistics of the remaining covariates:
 ```{r, echo=FALSE}
 summary(loan.dat)
-setwd(set_dir)
-save(loan.dat, file = "./loan.dat.RData")
+#setwd(set_dir)
+#save(loan.dat, file = "./loan.dat.RData")
 ```
 
 We examined a few associations that we thought would likely be meaningful visually. For example, we would want to include "State" in our model if it were likely to be meaningful in terms of loan status outcome, but with 51 levels, it would add a lot of parameters to our model if not necessary and impact our inference. 
@@ -392,8 +402,8 @@ Among the three options, we picked our final model based on the best test perfor
 *Warning: Due to the large number of records and predictors, the models took a long time to train. The training time was approximately ~ 4 hours.
 
 ```{r, eval=FALSE}
-setwd(set_dir)
-load('./loan.dat.Rdata')
+#setwd(set_dir)
+#load('./loan.dat.Rdata')
 start_time <- Sys.time()
 
 summary(loan.dat$loan_status_bin)
@@ -508,7 +518,7 @@ save(fit.ridge, fit.lasso, fit.enet, file = "./models.RData")
 ```{r, eval=TRUE, echo=FALSE}
 # This is so that I can work and knit my markdown in reasonable time
 setwd(set_dir)
-load('./loan.dat.Rdata')
+#load('./loan.dat.Rdata')
 load('./models.Rdata')
 
 set.seed(1)
@@ -556,7 +566,6 @@ y = loan.dat$loan_status_bin
 final_mod = glmnet(x=x, y=y, family = 'binomial', alpha = 1, 
                    lambda = 0.0001220703)
 
-
 setwd(set_dir)
 save(final_mod, file = "./final_model.RData")
 ```
@@ -565,7 +574,7 @@ save(final_mod, file = "./final_model.RData")
 
 Here is our final lasso model (\(\alpha=1\) and \(\lambda=0.0001220703\)) with the following regression coefficients:
 ```{r}
-setwd(set_dir)
+#setwd(set_dir)
 #load("final_model.RData")
 coef(final_mod)
 ```
