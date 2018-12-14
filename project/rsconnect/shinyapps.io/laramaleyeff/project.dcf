@@ -5,8 +5,8 @@ account: laramaleyeff
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 599346
-bundleId: 1759383
+bundleId: 1763585
 url: https://laramaleyeff.shinyapps.io/project/
-when: 1544649233.21692
+when: 1544805697.65666
 asMultiple: FALSE
 asStatic: FALSE

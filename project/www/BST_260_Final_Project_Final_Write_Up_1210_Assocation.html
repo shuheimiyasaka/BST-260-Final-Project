@@ -203,7 +203,7 @@ glm_CI &lt;- function(x) {
 ## (Intercept) 0.06025912 0.0596011 0.06092263
 ## x           1.29462778 1.2849837 1.30431849</code></pre>
 <p>We note that grade is a function of many other factors (e.g. employment length, annual income). Therefore, we also ran a multivariate logistic regression to condition out grade assignment.</p>
-<p>We see that after stratifying by grade, the effects of employment length and inquiries in the last 6 months on loan repayment remain statistically significant, although the odds ratio of inquiries in the last 6 months decreases discernably. This shows that in each grade stratum, the magnitude of the effect of inquiries in the last 6 months on loan default becomes smaller.</p>
+<p>We see that after stratifying by grade, the effects of employment length and inquiries in the last 6 months on loan repayment remain statistically significant, although the odds ratio of inquiries in the last 6 months decreases discernibly. This shows that in each grade stratum, the magnitude of the effect of inquiries in the last 6 months on loan default becomes smaller.</p>
 <pre class="r"><code>reg_fit &lt;- glm(status_dum ~ grade_ordinal + emp_length_ordinal + inq_last_6mths, data=loan.dat, family = &quot;binomial&quot;)
 exp(cbind(OR = coef(reg_fit), confint(reg_fit)))</code></pre>
 <pre><code>##                            OR      2.5 %     97.5 %
